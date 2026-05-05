@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claude Memory Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {} } }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@14.0.0/marked.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    textarea { resize: none; }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+
+    .prose h1, .prose h2, .prose h3, .prose h4 {
+      color: #f3f4f6; font-weight: 600; margin: 1rem 0 0.4rem;
+    }
+    .prose h1 { font-size: 1.3em; }
+    .prose h2 { font-size: 1.15em; }
+    .prose h3 { font-size: 1em; }
+    .prose p { margin-bottom: 0.6rem; color: #d1d5db; }
+    .prose ul { list-style: disc; padding-left: 1.4rem; margin-bottom: 0.6rem; }
+    .prose ol { list-style: decimal; padding-left: 1.4rem; margin-bottom: 0.6rem; }
+    .prose li { color: #d1d5db; margin-bottom: 0.2rem; }
+    .prose code { background: #1f2937; color: #a78bfa; padding: 0.1em 0.35em; border-radius: 0.2em; font-size: 0.875em; }
+    .prose pre { background: #111827; border: 1px solid #1f2937; border-radius: 0.4rem; padding: 0.85rem 1rem; overflow-x: auto; margin-bottom: 0.75rem; }
+    .prose pre code { background: none; padding: 0; color: #e5e7eb; font-size: 0.8em; }
+    .prose blockquote { border-left: 3px solid #374151; padding-left: 0.9rem; color: #6b7280; margin-bottom: 0.6rem; }
+    .prose strong { color: #f9fafb; font-weight: 600; }
+    .prose em { color: #c4b5fd; }
+    .prose a { color: #818cf8; text-decoration: underline; }
+    .prose hr { border-color: #1f2937; margin: 1rem 0; }
+    .prose table { width: 100%; border-collapse: collapse; margin-bottom: 0.75rem; font-size: 0.85em; }
+    .prose th { background: #1f2937; color: #d1d5db; padding: 0.4rem 0.75rem; text-align: left; }
+    .prose td { border-top: 1px solid #1f2937; padding: 0.35rem 0.75rem; color: #9ca3af; }
+  </style>
+</head>
+<body class="h-full bg-gray-950 text-gray-100 text-sm antialiased select-none"
+      x-data="app()" x-init="init()" x-cloak>
+
+  <!-- ═══════════════════════ HEADER ═══════════════════════ -->
+  <header class="h-11 bg-gray-900 border-b border-gray-800 flex items-center px-4 gap-3 flex-shrink-0 z-40 relative">
+    <span class="text-base">🧠</span>
+    <span class="font-semibold text-gray-200 tracking-tight">Claude Memory Manager</span>
+    <div class="w-px h-4 bg-gray-700"></div>
+
+    <!-- Search -->
+    <div class="relative flex-1 max-w-sm">
+      <input
+        type="text"
+        placeholder="Search all memories…  Ctrl+K"
+        x-model="searchQuery"
+        x-ref="searchInput"
+        @keydown.window.ctrl.k.prevent="$refs.searchInput.focus(); showSearch = true"
+        @input.debounce.300ms="runSearch()"
+        @focus="showSearch = true"
+        @keydown.escape="showSearch = false; searchQuery = ''"
+        class="w-full bg-gray-800 border border-gray-700 rounded-md pl-3 pr-3 py-1.5 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/40"
+      />
+
+      <!-- Search dropdown -->
+      <div
+        x-show="showSearch && (searchResults.length > 0 || (searchQuery.length >= 2 && !isSearching))"
+        @click.outside="showSearch = false"
+        class="absolute top-full left-0 mt-1 w-[480px] bg-gray-900 border border-gray-700 rounded-lg shadow-2xl z-50 overflow-hidden"
+      >
+        <div x-show="isSearching" class="px-3 py-2.5 text-xs text-gray-500">Searching…</div>
+        <div x-show="!isSearching && searchResults.length === 0 && searchQuery.length >= 2" class="px-3 py-2.5 text-xs text-gray-600">No results</div>
+        <div class="max-h-80 overflow-y-auto">
+          <template x-for="r in searchResults" :key="r.project_id + r.filename">
+            <button
+              @click="openSearchResult(r)"
+              class="w-full px-3 py-2.5 text-left hover:bg-gray-800 border-b border-gray-800/60 transition-colors"
+            >
+              <div class="flex items-center gap-2 mb-0.5">
+                <span :class="badge(r.type)" class="text-xs px-1.5 py-0.5 rounded font-mono uppercase flex-shrink-0" x-text="typeChar(r.type)"></span>
+                <span class="text-gray-200 text-xs font-medium truncate" x-text="r.name || r.filename"></span>
+                <span class="text-gray-600 text-xs truncate flex-shrink-0" x-text="shortLabel(r.project_label)"></span>
+              </div>
+              <div class="text-gray-500 text-xs font-mono truncate pl-0" x-text="r.snippet"></div>
+            </button>
+          </template>
+        </div>
+        <div x-show="searchResults.length > 0" class="px-3 py-1.5 border-t border-gray-800 text-xs text-gray-600" x-text="`${searchResults.length} result${searchResults.length !== 1 ? 's' : ''}`"></div>
+      </div>
+    </div>
+
+    <div class="flex-1"></div>
+    <span x-show="isReadOnly" class="px-2 py-1 bg-amber-900/40 text-amber-400 text-xs rounded border border-amber-800/60 font-medium">READ ONLY</span>
+    <span class="text-gray-600 text-xs" x-text="`${projects.length} projects`"></span>
+  </header>
+
+  <!-- ═══════════════════════ MAIN ═══════════════════════ -->
+  <div class="flex" style="height: calc(100vh - 2.75rem)">
+
+    <!-- ── LEFT: Projects ── -->
+    <aside class="w-56 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col overflow-hidden">
+      <div class="px-3 pt-2.5 pb-1 text-xs font-semibold text-gray-600 uppercase tracking-wider">Projects</div>
+      <div class="flex-1 overflow-y-auto pb-2">
+        <div x-show="isLoadingProjects" class="px-3 py-2 text-xs text-gray-600">Loading…</div>
+        <div x-show="!isLoadingProjects && projects.length === 0" class="px-3 py-2 text-xs text-gray-700">No projects found</div>
+        <template x-for="p in projects" :key="p.id">
+          <button
+            @click="selectProject(p)"
+            :class="selectedProject?.id === p.id
+              ? 'bg-violet-950/60 text-violet-200 border-l-2 border-violet-500'
+              : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
+            class="w-full flex items-center justify-between px-3 py-1.5 transition-colors"
+          >
+            <span class="truncate text-left text-xs leading-snug" x-text="shortLabel(p.label)" :title="p.label"></span>
+            <span
+              :class="selectedProject?.id === p.id ? 'bg-violet-800/50 text-violet-300' : 'bg-gray-800 text-gray-600'"
+              class="ml-1.5 text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 tabular-nums"
+              x-text="p.memory_count"
+            ></span>
+          </button>
+        </template>
+      </div>
+    </aside>
+
+    <!-- ── MIDDLE: File list ── -->
+    <div class="w-64 flex-shrink-0 border-r border-gray-800 flex flex-col overflow-hidden bg-gray-950">
+      <div class="px-3 py-2 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
+        <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider"
+              x-text="selectedProject ? 'Memory Files' : 'Select a project'"></span>
+        <button
+          x-show="selectedProject && !isReadOnly"
+          @click="startNew()"
+          class="text-xs text-violet-500 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
+        >+ New</button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto">
+        <div x-show="isLoadingMemories" class="px-3 py-3 text-xs text-gray-600">Loading…</div>
+        <div x-show="!selectedProject && !isLoadingMemories" class="px-3 py-3 text-xs text-gray-700 leading-relaxed">
+          Select a project to view its memory files
+        </div>
+
+        <template x-for="m in memories" :key="m.filename">
+          <button
+            @click="selectMemory(m)"
+            :class="selectedMemory?.filename === m.filename && selectedProject?.id === m.project_id
+              ? 'bg-gray-800 border-l-2 border-violet-500'
+              : 'border-l-2 border-transparent hover:bg-gray-900'"
+            class="w-full px-3 py-2 text-left transition-colors"
+          >
+            <div class="flex items-center gap-1.5">
+              <span :class="badge(m.type)" class="text-xs px-1.5 py-0.5 rounded font-mono uppercase flex-shrink-0 leading-none" x-text="typeChar(m.type)"></span>
+              <span class="text-xs text-gray-300 truncate leading-snug" x-text="m.filename.replace('.md', '')"></span>
+            </div>
+            <div class="text-xs text-gray-600 mt-0.5 truncate leading-snug pl-0.5"
+                 x-text="m.name"
+                 x-show="m.name && m.name !== m.filename.replace('.md', '')"></div>
+          </button>
+        </template>
+      </div>
+    </div>
+
+    <!-- ── RIGHT: Editor / Viewer ── -->
+    <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+
+      <!-- Empty state -->
+      <div x-show="!selectedMemory && editMode !== 'new'"
+           class="flex-1 flex items-center justify-center text-gray-800">
+        <div class="text-center">
+          <div class="text-5xl mb-3 opacity-30">🧠</div>
+          <div class="text-sm text-gray-700">Select a memory file to view</div>
+        </div>
+      </div>
+
+      <!-- ────────── NEW memory form ────────── -->
+      <div x-show="editMode === 'new'" class="flex-1 flex flex-col overflow-hidden">
+        <div class="px-4 py-2.5 border-b border-gray-800 flex items-center gap-3 flex-shrink-0">
+          <span class="text-sm font-medium text-gray-200">New Memory</span>
+          <span class="text-xs text-gray-600" x-text="selectedProject?.label"></span>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4">
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Type</label>
+              <select x-model="editForm.type" @change="autosuggest()"
+                      class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-violet-500">
+                <option value="user">user</option>
+                <option value="feedback">feedback</option>
+                <option value="project">project</option>
+                <option value="reference">reference</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 block mb-1">Filename <span class="text-gray-700">(auto-suggested)</span></label>
+              <input type="text" x-model="newFilename" placeholder="feedback_style.md"
+                     class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-violet-500 placeholder-gray-700" />
+            </div>
+            <div class="col-span-2">
+              <label class="text-xs text-gray-500 block mb-1">Name</label>
+              <input type="text" x-model="editForm.name" @input="autosuggest()" placeholder="Short descriptive name"
+                     class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-violet-500 placeholder-gray-700" />
+            </div>
+            <div class="col-span-2">
+              <label class="text-xs text-gray-500 block mb-1">Description <span class="text-gray-700">(one-line, shown in MEMORY.md index)</span></label>
+              <input type="text" x-model="editForm.description" placeholder="What this memory captures"
+                     class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-violet-500 placeholder-gray-700" />
+            </div>
+          </div>
+          <label class="text-xs text-gray-500 block mb-1">Body <span class="text-gray-700">(Markdown)</span></label>
+          <textarea
+            x-model="editForm.body"
+            @keydown.ctrl.enter.prevent="createMemory()"
+            placeholder="Memory content…"
+            class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-violet-500 leading-relaxed"
+            style="height: 280px"
+          ></textarea>
+          <div class="flex gap-2 mt-3">
+            <button @click="createMemory()" :disabled="isSaving"
+                    class="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs rounded transition-colors font-medium"
+                    x-text="isSaving ? 'Creating…' : 'Create  Ctrl+↵'"></button>
+            <button @click="cancelEdit()"
+                    class="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ────────── Memory viewer / editor ────────── -->
+      <template x-if="selectedMemory && editMode !== 'new'">
+        <div class="flex-1 flex flex-col overflow-hidden">
+
+          <!-- File header bar -->
+          <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-2.5 flex-shrink-0">
+            <span :class="badge(selectedMemory.type)" class="text-xs px-1.5 py-0.5 rounded font-mono uppercase" x-text="selectedMemory.type"></span>
+            <span class="text-sm font-medium text-gray-300" x-text="selectedMemory.filename"></span>
+            <span class="text-xs text-gray-700 truncate hidden md:block" x-text="selectedProject?.label"></span>
+            <div class="flex-1"></div>
+
+            <!-- View / Edit tabs -->
+            <div class="flex items-center bg-gray-800 rounded p-0.5 gap-0.5">
+              <button @click="editMode = 'view'"
+                      :class="editMode === 'view' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Preview</button>
+              <button x-show="!isReadOnly"
+                      @click="startEdit()"
+                      :class="editMode === 'edit' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Edit</button>
+            </div>
+
+            <button x-show="!isReadOnly && !selectedMemory.is_index"
+                    @click="confirmDelete()"
+                    class="text-xs text-red-600 hover:text-red-400 px-2 py-1 transition-colors">Delete</button>
+          </div>
+
+          <!-- VIEW mode -->
+          <div x-show="editMode === 'view'" class="flex-1 overflow-y-auto p-5">
+            <!-- Frontmatter card (skip for MEMORY.md) -->
+            <div x-show="!selectedMemory.is_index"
+                 class="mb-4 p-3.5 bg-gray-900 rounded-lg border border-gray-800">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <div class="text-xs text-gray-600 mb-0.5">name</div>
+                  <div class="text-xs text-gray-300" x-text="selectedMemory.name || '—'"></div>
+                </div>
+                <div>
+                  <div class="text-xs text-gray-600 mb-0.5">type</div>
+                  <span :class="badge(selectedMemory.type)" class="text-xs px-2 py-0.5 rounded font-mono uppercase" x-text="selectedMemory.type"></span>
+                </div>
+                <div class="col-span-2" x-show="selectedMemory.description">
+                  <div class="text-xs text-gray-600 mb-0.5">description</div>
+                  <div class="text-xs text-gray-400" x-text="selectedMemory.description"></div>
+                </div>
+              </div>
+            </div>
+            <!-- Markdown body -->
+            <div class="prose text-sm leading-relaxed" x-html="renderMd(selectedMemory.body)"></div>
+          </div>
+
+          <!-- EDIT mode -->
+          <div x-show="editMode === 'edit'" class="flex-1 flex flex-col overflow-hidden p-4">
+            <!-- Frontmatter fields -->
+            <div x-show="!selectedMemory.is_index" class="grid grid-cols-3 gap-3 mb-3 flex-shrink-0">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Type</label>
+                <select x-model="editForm.type"
+                        class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-violet-500">
+                  <option value="user">user</option>
+                  <option value="feedback">feedback</option>
+                  <option value="project">project</option>
+                  <option value="reference">reference</option>
+                  <option value="unknown">unknown</option>
+                </select>
+              </div>
+              <div class="col-span-2">
+                <label class="text-xs text-gray-500 block mb-1">Name</label>
+                <input type="text" x-model="editForm.name"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-violet-500" />
+              </div>
+              <div class="col-span-3">
+                <label class="text-xs text-gray-500 block mb-1">Description</label>
+                <input type="text" x-model="editForm.description"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-violet-500" />
+              </div>
+            </div>
+
+            <label class="text-xs text-gray-500 block mb-1 flex-shrink-0">
+              Body
+              <span class="text-gray-700 ml-1">Ctrl+S to save</span>
+            </label>
+            <textarea
+              x-model="editForm.body"
+              @keydown.ctrl.s.prevent="saveMemory()"
+              class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-violet-500 leading-relaxed"
+            ></textarea>
+
+            <div class="flex gap-2 mt-3 flex-shrink-0">
+              <button @click="saveMemory()" :disabled="isSaving"
+                      class="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs rounded transition-colors font-medium"
+                      x-text="isSaving ? 'Saving…' : 'Save'"></button>
+              <button @click="cancelEdit()"
+                      class="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors">Cancel</button>
+            </div>
+          </div>
+
+        </div>
+      </template>
+
+    </div><!-- /right -->
+  </div><!-- /main -->
+
+  <!-- ═══ Toast notification ═══ -->
+  <div
+    x-show="toast"
+    x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0 translate-y-1"
+    x-transition:enter-end="opacity-100 translate-y-0"
+    x-transition:leave="transition ease-in duration-150"
+    x-transition:leave-end="opacity-0"
+    :class="toast?.err ? 'bg-red-950 border-red-800 text-red-300' : 'bg-gray-800 border-gray-700 text-gray-200'"
+    class="fixed bottom-5 right-5 px-4 py-2.5 rounded-lg border text-xs shadow-2xl z-50 flex items-center gap-2 max-w-xs"
+  >
+    <span x-text="toast?.msg"></span>
+  </div>
+
+  <!-- ═══ Confirm dialog ═══ -->
+  <div x-show="confirmDlg" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div class="bg-gray-900 border border-gray-700 rounded-xl p-5 w-80 shadow-2xl">
+      <div class="text-sm text-gray-200 mb-1" x-text="confirmDlg?.title"></div>
+      <div class="text-xs text-gray-500 mb-5" x-text="confirmDlg?.body"></div>
+      <div class="flex gap-2 justify-end">
+        <button @click="confirmDlg = null"
+                class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors">Cancel</button>
+        <button @click="confirmDlg.action(); confirmDlg = null"
+                class="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs rounded transition-colors font-medium">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ SCRIPT ═══════════════════════ -->
+  <script>
+    function app() {
+      return {
+        // ── state ──
+        projects: [],
+        selectedProject: null,
+        memories: [],
+        selectedMemory: null,
+        editMode: 'view',     // 'view' | 'edit' | 'new'
+        editForm: { name: '', description: '', type: 'feedback', body: '' },
+        newFilename: '',
+        searchQuery: '',
+        searchResults: [],
+        showSearch: false,
+        isReadOnly: false,
+        isLoadingProjects: false,
+        isLoadingMemories: false,
+        isSaving: false,
+        isSearching: false,
+        toast: null,
+        confirmDlg: null,
+
+        // ── lifecycle ──
+        async init() {
+          const cfg = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
+          this.isReadOnly = cfg.read_only ?? false;
+          await this.loadProjects();
+        },
+
+        // ── projects ──
+        async loadProjects() {
+          this.isLoadingProjects = true;
+          try {
+            this.projects = await fetch('/api/projects').then(r => r.json());
+          } catch {
+            this.notify('Failed to load projects', true);
+          } finally {
+            this.isLoadingProjects = false;
+          }
+        },
+
+        async selectProject(p) {
+          this.selectedProject = p;
+          this.selectedMemory = null;
+          this.editMode = 'view';
+          this.isLoadingMemories = true;
+          try {
+            this.memories = await fetch(`/api/memories?project_id=${enc(p.id)}`).then(r => r.json());
+          } catch {
+            this.notify('Failed to load memory list', true);
+          } finally {
+            this.isLoadingMemories = false;
+          }
+        },
+
+        // ── memories ──
+        async selectMemory(m) {
+          try {
+            const data = await fetch(`/api/memories/file?project_id=${enc(m.project_id)}&filename=${enc(m.filename)}`).then(r => r.json());
+            this.selectedMemory = data;
+            this.editMode = 'view';
+          } catch {
+            this.notify('Failed to load file', true);
+          }
+        },
+
+        startEdit() {
+          this.editForm = {
+            name: this.selectedMemory.name,
+            description: this.selectedMemory.description,
+            type: this.selectedMemory.type,
+            body: this.selectedMemory.body,
+          };
+          this.editMode = 'edit';
+        },
+
+        cancelEdit() {
+          this.editMode = 'view';
+          if (!this.selectedMemory) {
+            // came from new-form with nothing previously selected — keep view empty
+          }
+        },
+
+        async saveMemory() {
+          if (this.isSaving) return;
+          this.isSaving = true;
+          try {
+            const params = `project_id=${enc(this.selectedMemory.project_id)}&filename=${enc(this.selectedMemory.filename)}`;
+            const res = await fetch(`/api/memories/file?${params}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.editForm),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Save failed');
+            this.selectedMemory = await res.json();
+            // sync list entry
+            const i = this.memories.findIndex(m => m.filename === this.selectedMemory.filename);
+            if (i >= 0) this.memories[i] = { ...this.selectedMemory };
+            this.editMode = 'view';
+            this.notify('Saved');
+          } catch (e) {
+            this.notify(e.message, true);
+          } finally {
+            this.isSaving = false;
+          }
+        },
+
+        // ── new memory ──
+        startNew() {
+          this.selectedMemory = null;
+          this.editMode = 'new';
+          this.editForm = { name: '', description: '', type: 'feedback', body: '' };
+          this.newFilename = '';
+        },
+
+        autosuggest() {
+          if (!this.editForm.name) return;
+          const slug = this.editForm.name.toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '');
+          this.newFilename = `${this.editForm.type}_${slug}.md`;
+        },
+
+        async createMemory() {
+          if (!this.newFilename || !this.editForm.name) {
+            this.notify('Name and filename are required', true);
+            return;
+          }
+          this.isSaving = true;
+          try {
+            const res = await fetch('/api/memories', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                project_id: this.selectedProject.id,
+                filename: this.newFilename,
+                name: this.editForm.name,
+                description: this.editForm.description,
+                type: this.editForm.type,
+                body: this.editForm.body,
+              }),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Create failed');
+            const created = await res.json();
+            this.memories.push({ ...created });
+            this.selectedMemory = created;
+            this.editMode = 'view';
+            const proj = this.projects.find(p => p.id === this.selectedProject.id);
+            if (proj) proj.memory_count++;
+            this.notify('Memory created');
+          } catch (e) {
+            this.notify(e.message, true);
+          } finally {
+            this.isSaving = false;
+          }
+        },
+
+        // ── delete ──
+        confirmDelete() {
+          this.confirmDlg = {
+            title: `Delete "${this.selectedMemory.filename}"?`,
+            body: 'A .bak backup will be saved alongside the file.',
+            action: () => this.deleteMemory(),
+          };
+        },
+
+        async deleteMemory() {
+          try {
+            const params = `project_id=${enc(this.selectedMemory.project_id)}&filename=${enc(this.selectedMemory.filename)}`;
+            const res = await fetch(`/api/memories/file?${params}`, { method: 'DELETE' });
+            if (!res.ok && res.status !== 204) throw new Error((await res.json()).detail || 'Delete failed');
+            this.memories = this.memories.filter(m => m.filename !== this.selectedMemory.filename);
+            const proj = this.projects.find(p => p.id === this.selectedProject?.id);
+            if (proj) proj.memory_count = Math.max(0, proj.memory_count - 1);
+            this.selectedMemory = null;
+            this.editMode = 'view';
+            this.notify('Deleted (backup saved)');
+          } catch (e) {
+            this.notify(e.message, true);
+          }
+        },
+
+        // ── search ──
+        async runSearch() {
+          if (this.searchQuery.length < 2) { this.searchResults = []; return; }
+          this.isSearching = true;
+          this.showSearch = true;
+          try {
+            this.searchResults = await fetch(`/api/search?q=${enc(this.searchQuery)}`).then(r => r.json());
+          } catch {
+            this.searchResults = [];
+          } finally {
+            this.isSearching = false;
+          }
+        },
+
+        async openSearchResult(r) {
+          this.showSearch = false;
+          this.searchQuery = '';
+          this.searchResults = [];
+          const proj = this.projects.find(p => p.id === r.project_id);
+          if (!proj) return;
+          await this.selectProject(proj);
+          const mem = this.memories.find(m => m.filename === r.filename);
+          if (mem) await this.selectMemory(mem);
+        },
+
+        // ── helpers ──
+        renderMd(text) {
+          if (!text) return '';
+          return marked.parse(text);
+        },
+
+        badge(type) {
+          return {
+            user:      'bg-blue-900/60 text-blue-300',
+            feedback:  'bg-orange-900/60 text-orange-300',
+            project:   'bg-green-900/60 text-green-300',
+            reference: 'bg-purple-900/60 text-purple-300',
+            index:     'bg-gray-700/80 text-gray-400',
+            unknown:   'bg-gray-800 text-gray-500',
+          }[type] ?? 'bg-gray-800 text-gray-500';
+        },
+
+        typeChar(type) {
+          return { user: 'U', feedback: 'F', project: 'P', reference: 'R', index: 'IDX', unknown: '?' }[type] ?? '?';
+        },
+
+        shortLabel(label) {
+          const parts = label.split('/').filter(Boolean);
+          if (parts.length <= 2) return '/' + parts.join('/');
+          return '…/' + parts.slice(-2).join('/');
+        },
+
+        notify(msg, err = false) {
+          this.toast = { msg, err };
+          clearTimeout(this._toastTimer);
+          this._toastTimer = setTimeout(() => { this.toast = null; }, 3000);
+        },
+      };
+    }
+
+    function enc(s) { return encodeURIComponent(s); }
+  </script>
+</body>
+</html>

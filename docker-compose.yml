@@ -1,0 +1,12 @@
+services:
+  memory-manager:
+    build: .
+    container_name: claude-memory-manager
+    ports:
+      - "8080:8080"
+    volumes:
+      - ~/.claude:/data:rw
+    environment:
+      - CLAUDE_DIR=/data
+      - READ_ONLY=false
+    restart: unless-stopped
