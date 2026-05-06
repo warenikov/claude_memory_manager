@@ -1,5 +1,7 @@
 # 🧠 Claude Memory Manager
 
+**Русский** · [English](./README.en.md)
+
 Веб-интерфейс для просмотра, редактирования и аудита всего, что Claude Code держит локально: auto-memory, глобальный и проектные `CLAUDE.md`, MCP-серверы, settings и сессионные логи.
 
 ## Проблема
