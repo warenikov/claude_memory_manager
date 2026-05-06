@@ -1,11 +1,55 @@
 import re
 import shutil
+from collections import deque
 from pathlib import Path
 from typing import List, Optional
 
-from app.config import CLAUDE_DIR, PROJECTS_DIR, READ_ONLY
-from app.models import MemoryCreate, MemoryFile, MemoryMeta, MemoryUpdate, Project, SearchResult
+from app.config import CLAUDE_DIR, CLAUDE_DIR_REAL, HOST_HOME, HOST_HOME_REAL, HOST_SEP, PROJECTS_DIR, READ_ONLY
+from app.models import ConfigFile, MemoryCreate, MemoryFile, MemoryMeta, MemoryUpdate, RawUpdate, Project, SearchResult
 from app.services.parser import parse, render
+
+
+def to_host_path(mounted: Path) -> str:
+    """Translate a Docker-mounted path back to its real host path for display.
+
+    /host-home/<rel>  -> HOST_HOME_REAL/<rel>     (project files)
+    /data/<rel>       -> CLAUDE_DIR_REAL/<rel>    (~/.claude files)
+    """
+    s = str(mounted)
+
+    def _join(base: str, rel: str) -> str:
+        if not rel:
+            return base
+        if HOST_SEP == "\\":
+            rel = rel.replace("/", "\\")
+        return f"{base}{HOST_SEP}{rel}"
+
+    if HOST_HOME and HOST_HOME_REAL:
+        h = str(HOST_HOME)
+        if s == h:
+            return HOST_HOME_REAL
+        if s.startswith(h + "/"):
+            return _join(HOST_HOME_REAL, s[len(h) + 1:])
+
+    if CLAUDE_DIR_REAL:
+        c = str(CLAUDE_DIR)
+        if s == c:
+            return CLAUDE_DIR_REAL
+        if s.startswith(c + "/"):
+            return _join(CLAUDE_DIR_REAL, s[len(c) + 1:])
+
+    return s
+
+
+def estimate_tokens(text: str) -> int:
+    """Approximate Claude token count.
+    ASCII (English/code) ≈ 4 chars/token, non-ASCII (Cyrillic/CJK) ≈ ~1.5 chars/token.
+    """
+    if not text:
+        return 0
+    ascii_count = sum(1 for c in text if c.isascii())
+    other_count = len(text) - ascii_count
+    return max(1, round(ascii_count / 4 + other_count / 1.5))
 
 
 def _decode_project_id(project_id: str) -> str:
@@ -50,13 +94,26 @@ def list_projects() -> List[Project]:
             f for f in mem_dir.glob("*.md")
             if f.name != "MEMORY.md" and not f.name.endswith('.bak')
         ]
-        has_index = (mem_dir / "MEMORY.md").exists()
+        index_path = mem_dir / "MEMORY.md"
+        has_index = index_path.exists()
         if not md_files and not has_index:
             continue
+        total_tokens = 0
+        for f in md_files:
+            try:
+                total_tokens += estimate_tokens(f.read_text(encoding='utf-8'))
+            except Exception:
+                pass
+        if has_index:
+            try:
+                total_tokens += estimate_tokens(index_path.read_text(encoding='utf-8'))
+            except Exception:
+                pass
         result.append(Project(
             id=d.name,
             label=_decode_project_id(d.name),
             memory_count=len(md_files),
+            total_tokens=total_tokens,
         ))
     return result
 
@@ -80,6 +137,7 @@ def list_memories(project_id: str) -> List[MemoryMeta]:
             type='index',
             project_id=project_id,
             is_index=True,
+            tokens=estimate_tokens(content),
         ))
 
     for f in sorted(mem_dir.glob("*.md")):
@@ -95,6 +153,7 @@ def list_memories(project_id: str) -> List[MemoryMeta]:
                 type=meta.get('type', 'unknown'),
                 project_id=project_id,
                 is_index=False,
+                tokens=estimate_tokens(content),
             ))
         except Exception:
             continue
@@ -115,6 +174,8 @@ def read_memory(project_id: str, filename: str) -> MemoryFile:
         project_id=project_id,
         is_index=filename == 'MEMORY.md',
         body=body,
+        file_path=to_host_path(path),
+        tokens=estimate_tokens(content),
     )
 
 
@@ -134,6 +195,24 @@ def write_memory(project_id: str, filename: str, update: MemoryUpdate) -> Memory
             'type': update.type,
         }
         path.write_text(render(meta, update.body), encoding='utf-8')
+    return read_memory(project_id, filename)
+
+
+def read_raw(project_id: str, filename: str) -> str:
+    path = _safe_path(project_id, filename)
+    if not path.exists():
+        raise FileNotFoundError(f"{filename} not found in project {project_id}")
+    return path.read_text(encoding='utf-8')
+
+
+def write_raw(project_id: str, filename: str, update: RawUpdate) -> MemoryFile:
+    if READ_ONLY:
+        raise PermissionError("Service is in read-only mode")
+    path = _safe_path(project_id, filename)
+    if not path.exists():
+        raise FileNotFoundError(f"{filename} not found")
+    _backup(path)
+    path.write_text(update.raw_content, encoding='utf-8')
     return read_memory(project_id, filename)
 
 
@@ -201,3 +280,153 @@ def search_memories(query: str, type_filter: Optional[str] = None) -> List[Searc
             except Exception:
                 continue
     return results[:50]
+
+
+# ── Global config files ──────────────────────────────────────────────────────
+
+_GLOBAL_FILES = [
+    ("CLAUDE.md",           "markdown"),
+    ("settings.json",       "json"),
+    ("settings.local.json", "json"),
+    (".mcp.json",           "json"),
+]
+
+
+def list_global_files() -> List[ConfigFile]:
+    result = []
+    for name, ftype in _GLOBAL_FILES:
+        path = CLAUDE_DIR / name
+        tokens = 0
+        if path.exists():
+            try:
+                tokens = estimate_tokens(path.read_text(encoding='utf-8'))
+            except Exception:
+                pass
+        result.append(ConfigFile(name=name, path=to_host_path(path), exists=path.exists(), file_type=ftype, tokens=tokens))
+    return result
+
+
+def read_global_file(name: str) -> ConfigFile:
+    for fname, ftype in _GLOBAL_FILES:
+        if fname == name:
+            path = CLAUDE_DIR / name
+            content = path.read_text(encoding='utf-8') if path.exists() else ''
+            return ConfigFile(name=name, path=to_host_path(path), exists=path.exists(), file_type=ftype, content=content, tokens=estimate_tokens(content))
+    raise ValueError(f"Unknown global file: {name!r}")
+
+
+def write_global_file(name: str, content: str) -> ConfigFile:
+    if READ_ONLY:
+        raise PermissionError("Service is in read-only mode")
+    for fname, ftype in _GLOBAL_FILES:
+        if fname == name:
+            path = CLAUDE_DIR / name
+            if path.exists():
+                _backup(path)
+            path.write_text(content, encoding='utf-8')
+            return ConfigFile(name=name, path=to_host_path(path), exists=True, file_type=ftype, content=content, tokens=estimate_tokens(content))
+    raise ValueError(f"Unknown global file: {name!r}")
+
+
+# ── Project config files ─────────────────────────────────────────────────────
+
+_PROJECT_CONFIG_FILES = [
+    ("CLAUDE.md",                   "markdown"),
+    (".claude/settings.json",       "json"),
+    (".claude/settings.local.json", "json"),
+]
+
+
+def _encode_path(path_str: str) -> str:
+    return ''.join(ch if (ch.isascii() and ch.isalnum()) else '-' for ch in path_str)
+
+
+def _find_project_path(project_id: str) -> Optional[Path]:
+    """BFS through HOST_HOME mount to find the directory that encodes to project_id."""
+    if HOST_HOME is None or not HOST_HOME.exists():
+        return None
+
+    def encode_as_host(mounted: Path) -> str:
+        if HOST_HOME_REAL:
+            try:
+                rel = mounted.relative_to(HOST_HOME)
+                host_path = str(Path(HOST_HOME_REAL) / rel)
+            except ValueError:
+                host_path = str(mounted)
+        else:
+            host_path = str(mounted)
+        return _encode_path(host_path)
+
+    queue: deque = deque([(HOST_HOME, 0)])
+    visited = 0
+    while queue and visited < 3000:
+        current, depth = queue.popleft()
+        visited += 1
+        encoded = encode_as_host(current)
+        if encoded == project_id:
+            return current
+        if depth >= 5 or not project_id.startswith(encoded):
+            continue
+        try:
+            for child in sorted(current.iterdir()):
+                if child.is_dir():
+                    queue.append((child, depth + 1))
+        except (PermissionError, OSError):
+            pass
+    return None
+
+
+def list_project_config(project_id: str) -> List[ConfigFile]:
+    if '..' in project_id or '/' in project_id:
+        raise ValueError("Invalid project_id")
+    project_path = _find_project_path(project_id)
+    result = []
+    for rel, ftype in _PROJECT_CONFIG_FILES:
+        if project_path:
+            path = project_path / rel
+            tokens = 0
+            if path.exists():
+                try:
+                    tokens = estimate_tokens(path.read_text(encoding='utf-8'))
+                except Exception:
+                    pass
+            result.append(ConfigFile(name=rel, path=to_host_path(path), exists=path.exists(), file_type=ftype, tokens=tokens))
+        else:
+            result.append(ConfigFile(name=rel, path="", exists=False, file_type=ftype))
+    return result
+
+
+def read_project_config_file(project_id: str, name: str) -> ConfigFile:
+    if '..' in project_id or '/' in project_id:
+        raise ValueError("Invalid project_id")
+    valid = {rel: ft for rel, ft in _PROJECT_CONFIG_FILES}
+    if name not in valid:
+        raise ValueError(f"Unknown config file: {name!r}")
+    project_path = _find_project_path(project_id)
+    if project_path is None:
+        raise FileNotFoundError("Project directory not found on host")
+    path = project_path / name
+    if not path.exists():
+        raise FileNotFoundError(f"{name} not found")
+    content = path.read_text(encoding='utf-8')
+    return ConfigFile(name=name, path=to_host_path(path), exists=True, file_type=valid[name], content=content, tokens=estimate_tokens(content))
+
+
+def write_project_config_file(project_id: str, name: str, content: str) -> ConfigFile:
+    if READ_ONLY:
+        raise PermissionError("Service is in read-only mode")
+    if '..' in project_id or '/' in project_id:
+        raise ValueError("Invalid project_id")
+    valid = {rel: ft for rel, ft in _PROJECT_CONFIG_FILES}
+    if name not in valid:
+        raise ValueError(f"Unknown config file: {name!r}")
+    project_path = _find_project_path(project_id)
+    if project_path is None:
+        raise FileNotFoundError("Project directory not found on host")
+    path = project_path / name
+    if path.exists():
+        _backup(path)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
+    return ConfigFile(name=name, path=to_host_path(path), exists=True, file_type=valid[name], content=content, tokens=estimate_tokens(content))

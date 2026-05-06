@@ -10,9 +10,18 @@
   </script>
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@14.0.0/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/layout-base@2.0.1/layout-base.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cose-base@2.2.0/cose-base.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-fcose@2.2.0/cytoscape-fcose.js"></script>
   <style>
     [x-cloak] { display: none !important; }
     textarea { resize: none; }
+    .line-clamp-2 {
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
 
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -99,26 +108,74 @@
   <!-- ═══════════════════════ MAIN ═══════════════════════ -->
   <div class="flex" style="height: calc(100vh - 2.75rem)">
 
-    <!-- ── LEFT: Projects ── -->
+    <!-- ── LEFT: Sidebar ── -->
     <aside class="w-56 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col overflow-hidden">
-      <div class="px-3 pt-2.5 pb-1 text-xs font-semibold text-gray-600 uppercase tracking-wider">Projects</div>
-      <div class="flex-1 overflow-y-auto pb-2">
+
+      <!-- ── System section (accordion) ── -->
+      <button @click="exp.system = !exp.system"
+              class="w-full flex items-center justify-between px-3 pt-2.5 pb-1 hover:bg-gray-800/40 transition-colors">
+        <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider">System</span>
+        <svg :class="exp.system ? 'rotate-90' : ''" class="w-3 h-3 text-gray-600 transition-transform"
+             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+      </button>
+      <div x-show="exp.system" >
+        <button
+          @click="selectGlobalSection()"
+          :class="viewMode === 'global'
+            ? 'bg-teal-950/60 text-teal-200 border-l-2 border-teal-500'
+            : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
+          class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
+        >
+          <span class="text-xs opacity-70">⚙</span>
+          <span class="text-xs">Global Config</span>
+        </button>
+      </div>
+
+      <div class="mx-3 my-2 border-t border-gray-800"></div>
+
+      <!-- ── Activity (single button) ── -->
+      <button
+        @click="selectActivitySection()"
+        :class="viewMode === 'activity'
+          ? 'bg-amber-950/60 text-amber-200 border-l-2 border-amber-500'
+          : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
+        class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
+      >
+        <span class="text-xs opacity-70">📊</span>
+        <span class="text-xs">Activity</span>
+      </button>
+
+      <div class="mx-3 my-2 border-t border-gray-800"></div>
+
+      <!-- ── Projects section (accordion) ── -->
+      <button @click="exp.projects = !exp.projects"
+              class="w-full flex items-center justify-between px-3 pb-1 pt-0.5 hover:bg-gray-800/40 transition-colors flex-shrink-0">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider">Projects</span>
+          <span class="text-xs text-gray-700 tabular-nums" x-text="`~${fmtTok(totalProjectsTokens)} tok`"></span>
+        </div>
+        <svg :class="exp.projects ? 'rotate-90' : ''" class="w-3 h-3 text-gray-600 transition-transform"
+             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+        </svg>
+      </button>
+      <div x-show="exp.projects"  class="flex-1 overflow-y-auto pb-2 min-h-0">
         <div x-show="isLoadingProjects" class="px-3 py-2 text-xs text-gray-600">Loading…</div>
         <div x-show="!isLoadingProjects && projects.length === 0" class="px-3 py-2 text-xs text-gray-700">No projects found</div>
         <template x-for="p in projects" :key="p.id">
           <button
             @click="selectProject(p)"
-            :class="selectedProject?.id === p.id
+            :class="selectedProject?.id === p.id && viewMode === 'projects'
               ? 'bg-violet-950/60 text-violet-200 border-l-2 border-violet-500'
               : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
-            class="w-full flex items-center justify-between px-3 py-1.5 transition-colors"
+            class="w-full flex items-center justify-between gap-2 px-3 py-1.5 transition-colors"
           >
-            <span class="truncate text-left text-xs leading-snug" x-text="shortLabel(p.label)" :title="p.label"></span>
-            <span
-              :class="selectedProject?.id === p.id ? 'bg-violet-800/50 text-violet-300' : 'bg-gray-800 text-gray-600'"
-              class="ml-1.5 text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 tabular-nums"
-              x-text="p.memory_count"
-            ></span>
+            <div class="flex flex-col min-w-0 flex-1">
+              <span class="truncate text-left text-xs leading-snug" x-text="shortLabel(p.label)" :title="p.label"></span>
+              <span class="text-xs text-gray-700 tabular-nums leading-tight" x-text="`${p.memory_count}f · ~${fmtTok(p.total_tokens)} tok`"></span>
+            </div>
           </button>
         </template>
       </div>
@@ -126,22 +183,113 @@
 
     <!-- ── MIDDLE: File list ── -->
     <div class="w-64 flex-shrink-0 border-r border-gray-800 flex flex-col overflow-hidden bg-gray-950">
-      <div class="px-3 py-2 flex items-center justify-between border-b border-gray-800 flex-shrink-0">
-        <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider"
-              x-text="selectedProject ? 'Memory Files' : 'Select a project'"></span>
+
+      <!-- Middle header -->
+      <div class="px-3 py-2 flex items-center justify-between border-b border-gray-800 flex-shrink-0 gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider truncate"
+                x-text="viewMode === 'global' ? 'Global Config'
+                      : viewMode === 'activity' ? 'Sessions'
+                      : (selectedProject ? 'Memory Files' : 'Select a project')"></span>
+          <span x-show="viewMode === 'global'" class="text-xs text-gray-700 tabular-nums flex-shrink-0"
+                x-text="`~${fmtTok(totalGlobalTokens)} tok`"></span>
+          <span x-show="viewMode === 'projects' && selectedProject" class="text-xs text-gray-700 tabular-nums flex-shrink-0"
+                x-text="`~${fmtTok(totalMemoryTokens)} tok`"></span>
+          <span x-show="viewMode === 'activity'" class="text-xs text-gray-700 tabular-nums flex-shrink-0"
+                x-text="`${sessions.length}`"></span>
+        </div>
         <button
-          x-show="selectedProject && !isReadOnly"
+          x-show="viewMode === 'projects' && selectedProject && !isReadOnly"
           @click="startNew()"
-          class="text-xs text-violet-500 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium"
+          class="text-xs text-violet-500 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium flex-shrink-0"
         >+ New</button>
       </div>
 
-      <div class="flex-1 overflow-y-auto">
+      <!-- Global files list -->
+      <div x-show="viewMode === 'global'" class="flex-1 overflow-y-auto">
+        <div x-show="isLoadingGlobal" class="px-3 py-3 text-xs text-gray-600">Loading…</div>
+        <template x-for="f in globalFiles" :key="f.name">
+          <button
+            @click="selectGlobalFile(f)"
+            :class="selectedCfg?.name === f.name && selectedCfgScope === 'global'
+              ? 'bg-gray-800 border-l-2 border-teal-500'
+              : 'border-l-2 border-transparent hover:bg-gray-900'"
+            class="w-full px-3 py-2 text-left transition-colors"
+          >
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs px-1.5 py-0.5 rounded font-mono uppercase flex-shrink-0 leading-none"
+                    :class="f.file_type === 'json' ? 'bg-yellow-900/60 text-yellow-300' : 'bg-teal-900/60 text-teal-300'"
+                    x-text="f.file_type === 'json' ? 'JSON' : 'MD'"></span>
+              <span class="text-xs truncate leading-snug flex-1"
+                    :class="f.exists ? 'text-gray-300' : 'text-gray-600'"
+                    x-text="f.name"></span>
+              <span x-show="!f.exists" class="text-xs text-gray-700 flex-shrink-0">missing</span>
+              <span x-show="f.exists" class="text-xs text-gray-600 tabular-nums flex-shrink-0" x-text="`~${fmtTok(f.tokens)}`"></span>
+            </div>
+          </button>
+        </template>
+      </div>
+
+      <!-- Activity sessions list -->
+      <div x-show="viewMode === 'activity'" class="flex-1 flex flex-col overflow-hidden">
+        <!-- Filters -->
+        <div class="px-3 py-2 border-b border-gray-800/60 flex flex-col gap-2 flex-shrink-0">
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-600 w-12 flex-shrink-0">Project</span>
+            <select x-model="actFilter.project_id" @change="loadSessions()"
+                    class="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-amber-500">
+              <option value="">All</option>
+              <template x-for="p in projects" :key="p.id">
+                <option :value="p.id" x-text="shortLabel(p.label)"></option>
+              </template>
+            </select>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-600 w-12 flex-shrink-0">Days</span>
+            <select x-model.number="actFilter.days" @change="loadSessions()"
+                    class="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-amber-500">
+              <option :value="7">last 7</option>
+              <option :value="30">last 30</option>
+              <option :value="90">last 90</option>
+              <option :value="0">all</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Session list -->
+        <div class="flex-1 overflow-y-auto">
+          <div x-show="isLoadingSessions" class="px-3 py-3 text-xs text-gray-600">Loading…</div>
+          <div x-show="!isLoadingSessions && sessions.length === 0"
+               class="px-3 py-3 text-xs text-gray-700">No sessions in this range</div>
+          <template x-for="s in sessions" :key="s.session_id">
+            <button
+              @click="selectSession(s)"
+              :class="selectedSession?.session_id === s.session_id
+                ? 'bg-gray-800 border-l-2 border-amber-500'
+                : 'border-l-2 border-transparent hover:bg-gray-900'"
+              class="w-full px-3 py-2 text-left transition-colors block"
+            >
+              <div class="flex items-center gap-1.5 mb-0.5">
+                <span class="text-xs text-gray-300 font-mono" x-text="s.session_id.slice(0, 8)"></span>
+                <span class="text-xs text-gray-700 truncate flex-1" x-text="shortLabel(decodeProj(s.project_id))"></span>
+                <span class="text-xs text-gray-600 tabular-nums flex-shrink-0" x-text="fmtSize(s.size_bytes)"></span>
+              </div>
+              <div class="text-xs text-gray-600 leading-snug truncate" x-text="fmtRelativeTime(s.modified)"></div>
+              <div x-show="s.preview" class="text-xs text-gray-500 leading-snug mt-0.5 line-clamp-2"
+                   x-text="s.preview"></div>
+            </button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Memory + Config files list (projects mode) -->
+      <div x-show="viewMode === 'projects'" class="flex-1 overflow-y-auto">
         <div x-show="isLoadingMemories" class="px-3 py-3 text-xs text-gray-600">Loading…</div>
         <div x-show="!selectedProject && !isLoadingMemories" class="px-3 py-3 text-xs text-gray-700 leading-relaxed">
           Select a project to view its memory files
         </div>
 
+        <!-- Memory files -->
         <template x-for="m in memories" :key="m.filename">
           <button
             @click="selectMemory(m)"
@@ -152,25 +300,58 @@
           >
             <div class="flex items-center gap-1.5">
               <span :class="badge(m.type)" class="text-xs px-1.5 py-0.5 rounded font-mono uppercase flex-shrink-0 leading-none" x-text="typeChar(m.type)"></span>
-              <span class="text-xs text-gray-300 truncate leading-snug" x-text="m.filename.replace('.md', '')"></span>
+              <span class="text-xs text-gray-300 truncate leading-snug flex-1" x-text="m.filename.replace('.md', '')"></span>
+              <span class="text-xs text-gray-600 tabular-nums flex-shrink-0" x-text="`~${fmtTok(m.tokens)}`"></span>
             </div>
             <div class="text-xs text-gray-600 mt-0.5 truncate leading-snug pl-0.5"
                  x-text="m.name"
                  x-show="m.name && m.name !== m.filename.replace('.md', '')"></div>
           </button>
         </template>
+
+        <!-- Project Config Files -->
+        <template x-if="projectConfig.length > 0">
+          <div>
+            <div class="px-3 py-1.5 mt-1 text-xs font-semibold text-gray-700 uppercase tracking-wider border-t border-gray-800/60">Config</div>
+            <template x-for="f in projectConfig" :key="f.name">
+              <button
+                @click="selectProjectConfigFile(f)"
+                :disabled="!f.path"
+                :class="[
+                  selectedCfg?.name === f.name && selectedCfgScope === 'project'
+                    ? 'bg-gray-800 border-l-2 border-teal-500'
+                    : 'border-l-2 border-transparent hover:bg-gray-900',
+                  !f.path ? 'opacity-30 cursor-not-allowed' : (f.exists ? '' : 'opacity-60'),
+                ]"
+                class="w-full px-3 py-2 text-left transition-colors"
+              >
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs px-1.5 py-0.5 rounded font-mono uppercase flex-shrink-0 leading-none"
+                        :class="f.file_type === 'json' ? 'bg-yellow-900/60 text-yellow-300' : 'bg-teal-900/60 text-teal-300'"
+                        x-text="f.file_type === 'json' ? 'JSON' : 'MD'"></span>
+                  <span class="text-xs truncate leading-snug text-gray-400 flex-1" x-text="f.name"></span>
+                  <span x-show="!f.exists && f.path" class="text-xs text-gray-700 flex-shrink-0">new</span>
+                  <span x-show="!f.path" class="text-xs text-gray-700 flex-shrink-0">n/a</span>
+                  <span x-show="f.exists" class="text-xs text-gray-600 tabular-nums flex-shrink-0" x-text="`~${fmtTok(f.tokens)}`"></span>
+                </div>
+              </button>
+            </template>
+          </div>
+        </template>
       </div>
     </div>
 
-    <!-- ── RIGHT: Editor / Viewer ── -->
+    <!-- ── RIGHT: Content panel ── -->
     <div class="flex-1 flex flex-col overflow-hidden min-w-0">
 
       <!-- Empty state -->
-      <div x-show="!selectedMemory && editMode !== 'new'"
+      <div x-show="!selectedMemory && !selectedCfg && !selectedSession && editMode !== 'new'"
            class="flex-1 flex items-center justify-center text-gray-800">
         <div class="text-center">
-          <div class="text-5xl mb-3 opacity-30">🧠</div>
-          <div class="text-sm text-gray-700">Select a memory file to view</div>
+          <div class="text-5xl mb-3 opacity-30"
+               x-text="viewMode === 'activity' ? '📊' : '🧠'"></div>
+          <div class="text-sm text-gray-700"
+               x-text="viewMode === 'activity' ? 'Select a session to inspect' : 'Select a file to view'"></div>
         </div>
       </div>
 
@@ -227,17 +408,20 @@
       </div>
 
       <!-- ────────── Memory viewer / editor ────────── -->
-      <template x-if="selectedMemory && editMode !== 'new'">
+      <template x-if="selectedMemory && !selectedCfg && editMode !== 'new'">
         <div class="flex-1 flex flex-col overflow-hidden">
 
           <!-- File header bar -->
           <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-2.5 flex-shrink-0">
             <span :class="badge(selectedMemory.type)" class="text-xs px-1.5 py-0.5 rounded font-mono uppercase" x-text="selectedMemory.type"></span>
             <span class="text-sm font-medium text-gray-300" x-text="selectedMemory.filename"></span>
-            <span class="text-xs text-gray-700 truncate hidden md:block" x-text="selectedProject?.label"></span>
+            <span class="text-xs text-gray-600 tabular-nums flex-shrink-0" x-text="`~${fmtTok(selectedMemory.tokens)} tok`"></span>
+            <span class="text-xs text-gray-600 font-mono truncate hidden md:block select-all"
+                  x-text="selectedMemory.file_path"
+                  :title="selectedMemory.file_path"></span>
             <div class="flex-1"></div>
 
-            <!-- View / Edit tabs -->
+            <!-- View / Edit / Raw tabs -->
             <div class="flex items-center bg-gray-800 rounded p-0.5 gap-0.5">
               <button @click="editMode = 'view'"
                       :class="editMode === 'view' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
@@ -246,6 +430,9 @@
                       @click="startEdit()"
                       :class="editMode === 'edit' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
                       class="px-2.5 py-1 text-xs rounded transition-colors">Edit</button>
+              <button @click="startRaw()"
+                      :class="editMode === 'raw' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">RAW</button>
             </div>
 
             <button x-show="!isReadOnly && !selectedMemory.is_index"
@@ -323,6 +510,180 @@
             </div>
           </div>
 
+          <!-- RAW mode -->
+          <div x-show="editMode === 'raw'" class="flex-1 flex flex-col overflow-hidden p-4">
+            <label class="text-xs text-gray-500 block mb-1 flex-shrink-0">
+              Raw file content
+              <span class="text-gray-700 ml-1" x-show="!isReadOnly">Ctrl+S to save</span>
+            </label>
+            <textarea
+              x-model="rawContent"
+              :readonly="isReadOnly"
+              @keydown.ctrl.s.prevent="isReadOnly || saveRaw()"
+              class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-violet-500 leading-relaxed"
+              :class="isReadOnly ? 'cursor-default' : ''"
+            ></textarea>
+
+            <div class="flex gap-2 mt-3 flex-shrink-0">
+              <button x-show="!isReadOnly"
+                      @click="saveRaw()" :disabled="isSaving"
+                      class="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs rounded transition-colors font-medium"
+                      x-text="isSaving ? 'Saving…' : 'Save'"></button>
+              <button @click="cancelEdit()"
+                      class="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors">Cancel</button>
+            </div>
+          </div>
+
+        </div>
+      </template>
+
+      <!-- ────────── Config file viewer (global + project config) ────────── -->
+      <template x-if="selectedCfg && editMode !== 'new'">
+        <div class="flex-1 flex flex-col overflow-hidden">
+
+          <!-- Header -->
+          <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-2.5 flex-shrink-0">
+            <span class="text-xs px-1.5 py-0.5 rounded font-mono uppercase"
+                  :class="selectedCfg.file_type === 'json' ? 'bg-yellow-900/60 text-yellow-300' : 'bg-teal-900/60 text-teal-300'"
+                  x-text="selectedCfg.file_type === 'json' ? 'JSON' : 'MD'"></span>
+            <span class="text-sm font-medium text-gray-300" x-text="selectedCfg.name"></span>
+            <span x-show="selectedCfg.exists" class="text-xs text-gray-600 tabular-nums flex-shrink-0" x-text="`~${fmtTok(selectedCfg.tokens)} tok`"></span>
+            <span class="text-xs text-gray-600 font-mono truncate hidden md:block select-all"
+                  x-text="selectedCfg.path || '(path not resolved)'"
+                  :title="selectedCfg.path"></span>
+            <div class="flex-1"></div>
+
+            <!-- Preview / Edit tabs -->
+            <div class="flex items-center bg-gray-800 rounded p-0.5 gap-0.5">
+              <button x-show="selectedCfg.file_type === 'markdown'"
+                      @click="cfgMode = 'view'"
+                      :class="cfgMode === 'view' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Preview</button>
+              <button x-show="!isReadOnly"
+                      @click="startCfgEdit()"
+                      :class="cfgMode === 'edit' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Edit</button>
+            </div>
+          </div>
+
+          <!-- VIEW mode: markdown -->
+          <div x-show="cfgMode === 'view' && selectedCfg.file_type === 'markdown'"
+               class="flex-1 overflow-y-auto p-5">
+            <div class="prose text-sm leading-relaxed" x-html="renderMd(selectedCfg.content || '')"></div>
+          </div>
+
+          <!-- VIEW mode: JSON formatted -->
+          <div x-show="cfgMode === 'view' && selectedCfg.file_type !== 'markdown'"
+               class="flex-1 overflow-y-auto p-4">
+            <pre class="text-xs text-gray-300 font-mono leading-relaxed whitespace-pre-wrap"
+                 x-text="formatJson(selectedCfg.content || '')"></pre>
+          </div>
+
+          <!-- EDIT mode -->
+          <div x-show="cfgMode === 'edit'" class="flex-1 flex flex-col overflow-hidden p-4">
+            <label class="text-xs text-gray-500 block mb-1 flex-shrink-0">
+              <span x-text="selectedCfg.file_type === 'json' ? 'JSON' : 'Markdown'"></span>
+              <span class="text-gray-700 ml-1">Ctrl+S to save</span>
+            </label>
+            <textarea
+              x-model="cfgContent"
+              @keydown.ctrl.s.prevent="saveCfg()"
+              class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-violet-500 leading-relaxed"
+            ></textarea>
+            <div class="flex gap-2 mt-3 flex-shrink-0">
+              <button @click="saveCfg()" :disabled="isSaving"
+                      class="px-4 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-xs rounded transition-colors font-medium"
+                      x-text="isSaving ? 'Saving…' : 'Save'"></button>
+              <button @click="cancelCfgEdit()"
+                      class="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors">Cancel</button>
+            </div>
+          </div>
+
+        </div>
+      </template>
+
+      <!-- ────────── Session detail (Activity) ────────── -->
+      <template x-if="selectedSession && viewMode === 'activity'">
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <!-- Header -->
+          <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-2.5 flex-shrink-0">
+            <span class="text-xs px-1.5 py-0.5 rounded font-mono uppercase bg-amber-900/60 text-amber-300">SESSION</span>
+            <span class="text-sm font-medium text-gray-300 font-mono" x-text="selectedSession.session_id.slice(0,8)"></span>
+            <span class="text-xs text-gray-600 truncate hidden md:block" x-text="shortLabel(decodeProj(selectedSession.project_id))"></span>
+
+            <span x-show="sessionDetail" class="text-xs text-gray-600 tabular-nums">
+              <span x-text="`${sessionDetail?.stats?.files || 0} files`"></span>
+              <span class="mx-2 text-gray-700">·</span>
+              <span x-text="`~${fmtTok(sessionDetail?.stats?.tokens?.total || 0)} tok`"></span>
+            </span>
+
+            <div class="flex-1"></div>
+
+            <!-- tabs -->
+            <div class="flex items-center bg-gray-800 rounded p-0.5 gap-0.5">
+              <button @click="actTab = 'burn'; renderActTab()"
+                      :class="actTab === 'burn' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Token Burn</button>
+              <button @click="actTab = 'graph'; renderActTab()"
+                      :class="actTab === 'graph' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">File Graph</button>
+            </div>
+          </div>
+
+          <!-- loading -->
+          <div x-show="isLoadingDetail" class="flex-1 flex items-center justify-center text-xs text-gray-600">
+            Parsing session…
+          </div>
+
+          <!-- Token Burn tab -->
+          <div x-show="!isLoadingDetail && actTab === 'burn'" class="flex-1 flex flex-col overflow-hidden p-4">
+            <!-- Token totals -->
+            <div x-show="sessionDetail" class="grid grid-cols-4 gap-2 mb-3 flex-shrink-0">
+              <div class="bg-gray-900 rounded p-2 border border-gray-800">
+                <div class="text-xs text-gray-600">Input</div>
+                <div class="text-sm text-blue-300 tabular-nums" x-text="fmtTok(sessionDetail?.stats?.tokens?.input || 0)"></div>
+              </div>
+              <div class="bg-gray-900 rounded p-2 border border-gray-800">
+                <div class="text-xs text-gray-600">Output</div>
+                <div class="text-sm text-orange-300 tabular-nums" x-text="fmtTok(sessionDetail?.stats?.tokens?.output || 0)"></div>
+              </div>
+              <div class="bg-gray-900 rounded p-2 border border-gray-800">
+                <div class="text-xs text-gray-600">Cache create</div>
+                <div class="text-sm text-yellow-300 tabular-nums" x-text="fmtTok(sessionDetail?.stats?.tokens?.cache_create || 0)"></div>
+              </div>
+              <div class="bg-gray-900 rounded p-2 border border-gray-800">
+                <div class="text-xs text-gray-600">Cache read</div>
+                <div class="text-sm text-purple-300 tabular-nums" x-text="fmtTok(sessionDetail?.stats?.tokens?.cache_read || 0)"></div>
+              </div>
+            </div>
+            <div class="flex-1 bg-gray-900 rounded border border-gray-800 p-3 min-h-0 relative">
+              <canvas x-ref="burnCanvas"></canvas>
+            </div>
+          </div>
+
+          <!-- File Graph tab -->
+          <div x-show="!isLoadingDetail && actTab === 'graph'" class="flex-1 flex flex-col overflow-hidden p-4">
+            <div class="flex items-center gap-3 mb-2 flex-shrink-0 text-xs text-gray-500">
+              <span>Nodes: <span class="text-gray-300 tabular-nums" x-text="sessionDetail?.file_graph?.nodes?.length || 0"></span></span>
+              <span>Edges: <span class="text-gray-300 tabular-nums" x-text="sessionDetail?.file_graph?.edges?.length || 0"></span></span>
+              <span class="text-gray-700">|</span>
+              <span class="text-gray-600">Edge weight = adjacency in time within session</span>
+              <div class="flex-1"></div>
+              <button @click="cyFitGraph()" class="text-gray-500 hover:text-gray-300">Fit</button>
+            </div>
+            <div class="flex-1 bg-gray-900 rounded border border-gray-800 min-h-0 relative">
+              <div x-ref="cyContainer" class="absolute inset-0"></div>
+              <div x-show="cyHover" class="absolute bottom-2 left-2 right-2 bg-gray-800 border border-gray-700 rounded p-2 text-xs text-gray-300 font-mono pointer-events-none">
+                <div class="truncate" x-text="cyHover?.path"></div>
+                <div class="text-gray-600 mt-0.5">
+                  <span x-text="`${cyHover?.value || 0} touches`"></span>
+                  <template x-for="(c, t) in (cyHover?.tools || {})">
+                    <span> · <span x-text="t"></span>: <span x-text="c"></span></span>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </template>
 
@@ -362,13 +723,38 @@
     function app() {
       return {
         // ── state ──
+        exp: { system: true, projects: true },   // accordion sections
+        viewMode: 'projects',       // 'projects' | 'global' | 'activity'
         projects: [],
+
+        // activity
+        sessions: [],
+        isLoadingSessions: false,
+        actFilter: { project_id: '', days: 30 },
+        selectedSession: null,
+        sessionDetail: null,
+        isLoadingDetail: false,
+        actTab: 'burn',     // 'burn' | 'graph'
+        chartInstance: null,
+        cyInstance: null,
+        cyHover: null,
         selectedProject: null,
         memories: [],
         selectedMemory: null,
-        editMode: 'view',     // 'view' | 'edit' | 'new'
+        editMode: 'view',           // 'view' | 'edit' | 'raw' | 'new'
         editForm: { name: '', description: '', type: 'feedback', body: '' },
+        rawContent: '',
         newFilename: '',
+
+        // global + project config
+        globalFiles: [],
+        isLoadingGlobal: false,
+        projectConfig: [],
+        selectedCfg: null,          // selected ConfigFile (global or project)
+        selectedCfgScope: null,     // 'global' | 'project'
+        cfgMode: 'view',            // 'view' | 'edit'
+        cfgContent: '',
+
         searchQuery: '',
         searchResults: [],
         showSearch: false,
@@ -402,14 +788,364 @@
         async selectProject(p) {
           this.selectedProject = p;
           this.selectedMemory = null;
+          this.selectedCfg = null;
+          this.selectedSession = null;
+          this.destroyChart();
+          this.destroyCy();
+          this.viewMode = 'projects';
           this.editMode = 'view';
+          this.cfgMode = 'view';
           this.isLoadingMemories = true;
           try {
-            this.memories = await fetch(`/api/memories?project_id=${enc(p.id)}`).then(r => r.json());
+            const [mems, cfg] = await Promise.all([
+              fetch(`/api/memories?project_id=${enc(p.id)}`).then(r => r.json()),
+              fetch(`/api/project-config?project_id=${enc(p.id)}`).then(r => r.json()).catch(() => []),
+            ]);
+            this.memories = mems;
+            this.projectConfig = cfg;
           } catch {
             this.notify('Failed to load memory list', true);
           } finally {
             this.isLoadingMemories = false;
+          }
+        },
+
+        // ── activity section ──
+        async selectActivitySection() {
+          this.viewMode = 'activity';
+          this.selectedProject = null;
+          this.selectedMemory = null;
+          this.selectedCfg = null;
+          this.editMode = 'view';
+          this.cfgMode = 'view';
+          this.destroyChart();
+          this.destroyCy();
+          await this.loadSessions();
+        },
+
+        async loadSessions() {
+          this.isLoadingSessions = true;
+          this.selectedSession = null;
+          this.sessionDetail = null;
+          try {
+            const params = new URLSearchParams();
+            if (this.actFilter.project_id) params.set('project_id', this.actFilter.project_id);
+            params.set('days', String(this.actFilter.days));
+            this.sessions = await fetch(`/api/logs/sessions?${params}`).then(r => r.json());
+          } catch {
+            this.sessions = [];
+            this.notify('Failed to load sessions', true);
+          } finally {
+            this.isLoadingSessions = false;
+          }
+        },
+
+        async selectSession(s) {
+          this.selectedSession = s;
+          this.sessionDetail = null;
+          this.isLoadingDetail = true;
+          this.destroyChart();
+          this.destroyCy();
+          try {
+            const params = `session_id=${enc(s.session_id)}&project_id=${enc(s.project_id)}`;
+            this.sessionDetail = await fetch(`/api/logs/session-detail?${params}`).then(r => r.json());
+            await this.$nextTick();
+            this.renderActTab();
+          } catch (e) {
+            this.notify('Failed to parse session', true);
+          } finally {
+            this.isLoadingDetail = false;
+          }
+        },
+
+        renderActTab() {
+          if (!this.sessionDetail) return;
+          // Two ticks: 1) Alpine flips x-show, 2) browser computes layout, then we measure & render.
+          this.$nextTick(() => requestAnimationFrame(() => {
+            if (this.actTab === 'burn') this.renderBurnChart();
+            else this.renderFileGraph();
+          }));
+        },
+
+        renderBurnChart() {
+          this.destroyChart();
+          const canvas = this.$refs.burnCanvas;
+          if (!canvas || !this.sessionDetail) return;
+          const burn = this.sessionDetail.token_burn || [];
+          const labels = burn.map(b => b.date);
+          this.chartInstance = new Chart(canvas, {
+            type: 'bar',
+            data: {
+              labels,
+              datasets: [
+                { label: 'Input',        data: burn.map(b => b.input),        backgroundColor: '#3b82f6' },
+                { label: 'Output',       data: burn.map(b => b.output),       backgroundColor: '#f97316' },
+                { label: 'Cache create', data: burn.map(b => b.cache_create), backgroundColor: '#eab308' },
+                { label: 'Cache read',   data: burn.map(b => b.cache_read),   backgroundColor: '#a855f7' },
+              ],
+            },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              scales: {
+                x: { stacked: true, ticks: { color: '#6b7280', font: { size: 10 } }, grid: { color: '#1f2937' } },
+                y: { stacked: true, ticks: { color: '#6b7280', font: { size: 10 }, callback: v => this.fmtTok(v) }, grid: { color: '#1f2937' } },
+              },
+              plugins: {
+                legend: { labels: { color: '#9ca3af', font: { size: 11 }, boxWidth: 12 } },
+                tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${this.fmtTok(ctx.parsed.y)}` } },
+              },
+            },
+          });
+        },
+
+        renderFileGraph() {
+          this.destroyCy();
+          const container = this.$refs.cyContainer;
+          if (!container || !this.sessionDetail) return;
+          const g = this.sessionDetail.file_graph || { nodes: [], edges: [] };
+          if (!g.nodes.length) return;
+
+          const idMap = new Map();
+          g.nodes.forEach((n, i) => idMap.set(n.id, `n${i}`));
+          const els = [
+            ...g.nodes.map((n, i) => ({
+              data: { id: `n${i}`, label: n.label, weight: n.value, path: n.path, ext: n.ext, tools: n.tools },
+            })),
+            ...g.edges.map(e => ({
+              data: { source: idMap.get(e.from), target: idMap.get(e.to), weight: e.value },
+            })).filter(e => e.data.source && e.data.target),
+          ];
+
+          const maxW = Math.max(...g.nodes.map(n => n.value), 1);
+          const maxE = Math.max(...g.edges.map(e => e.value), 1);
+
+          // ensure fcose is registered with cytoscape (plugin attaches on load)
+          if (typeof cytoscape.use === 'function' && typeof window.cytoscapeFcose === 'function' && !cytoscape._fcoseRegistered) {
+            try { cytoscape.use(window.cytoscapeFcose); cytoscape._fcoseRegistered = true; } catch {}
+          }
+
+          this.cyInstance = cytoscape({
+            container,
+            elements: els,
+            style: [
+              { selector: 'node', style: {
+                  'background-color': ele => this.extColor(ele.data('ext')),
+                  'label': 'data(label)',
+                  'color': '#d1d5db',
+                  'font-size': 9,
+                  'text-valign': 'bottom',
+                  'text-margin-y': 3,
+                  'text-outline-color': '#0a0a0a',
+                  'text-outline-width': 2,
+                  'width':  ele => 8 + 32 * Math.sqrt(ele.data('weight') / maxW),
+                  'height': ele => 8 + 32 * Math.sqrt(ele.data('weight') / maxW),
+                  'border-color': '#1f2937', 'border-width': 1,
+                }},
+              { selector: 'edge', style: {
+                  'width': ele => 0.5 + 3 * (ele.data('weight') / maxE),
+                  'line-color': '#374151',
+                  'opacity': 0.55,
+                  'curve-style': 'bezier',
+                }},
+              { selector: 'node:selected', style: {
+                  'border-color': '#f59e0b', 'border-width': 2,
+                }},
+              { selector: 'node.faded', style: { 'opacity': 0.2 }},
+              { selector: 'edge.faded', style: { 'opacity': 0.05 }},
+              { selector: 'node.highlight', style: { 'opacity': 1 }},
+              { selector: 'edge.highlight', style: { 'opacity': 0.9, 'line-color': '#f59e0b' }},
+            ],
+          });
+
+          // Manually run layout so we can recenter once it stops; `fit:true`
+          // alone is not enough if the container had 0×0 at init time.
+          const layout = this.cyInstance.layout({
+            name: 'fcose',
+            quality: 'default',
+            animate: false,
+            fit: true,
+            padding: 40,
+            nodeSeparation: 90,
+            idealEdgeLength: 90,
+            nodeRepulsion: 5000,
+            randomize: true,
+          });
+          this.cyInstance.one('layoutstop', () => {
+            if (!this.cyInstance) return;
+            this.cyInstance.resize();
+            this.cyInstance.fit(undefined, 40);
+            this.cyInstance.center();
+          });
+          layout.run();
+
+          // Safety: re-fit when the container actually gets a real size
+          // (handles the "tab toggled in" / window-resize cases).
+          if (typeof ResizeObserver !== 'undefined') {
+            this._cyResizeObs = new ResizeObserver(() => {
+              if (this.cyInstance) {
+                this.cyInstance.resize();
+                this.cyInstance.fit(undefined, 40);
+              }
+            });
+            this._cyResizeObs.observe(container);
+          }
+
+          this.cyInstance.on('mouseover', 'node', evt => {
+            this.cyHover = evt.target.data();
+            const node = evt.target;
+            this.cyInstance.elements().addClass('faded');
+            node.removeClass('faded').addClass('highlight');
+            node.connectedEdges().removeClass('faded').addClass('highlight');
+            node.connectedEdges().connectedNodes().removeClass('faded').addClass('highlight');
+          });
+          this.cyInstance.on('mouseout', 'node', () => {
+            this.cyHover = null;
+            this.cyInstance.elements().removeClass('faded highlight');
+          });
+        },
+
+        cyFitGraph() {
+          if (this.cyInstance) this.cyInstance.fit(undefined, 30);
+        },
+
+        destroyChart() {
+          if (this.chartInstance) { try { this.chartInstance.destroy(); } catch {} this.chartInstance = null; }
+        },
+        destroyCy() {
+          if (this._cyResizeObs) { try { this._cyResizeObs.disconnect(); } catch {} this._cyResizeObs = null; }
+          if (this.cyInstance) { try { this.cyInstance.destroy(); } catch {} this.cyInstance = null; }
+          this.cyHover = null;
+        },
+
+        extColor(ext) {
+          const m = {
+            py: '#3b82f6', go: '#06b6d4', js: '#f59e0b', jsx: '#f59e0b',
+            ts: '#3178c6', tsx: '#3178c6',
+            php: '#8b5cf6', md: '#10b981', json: '#eab308',
+            yml: '#ec4899', yaml: '#ec4899', html: '#ef4444', css: '#a855f7',
+            sh: '#22c55e', sql: '#0ea5e9', toml: '#f43f5e', env: '#64748b',
+          };
+          return m[ext] || '#6366f1';
+        },
+
+        // ── global section ──
+        async selectGlobalSection() {
+          this.viewMode = 'global';
+          this.selectedProject = null;
+          this.selectedMemory = null;
+          this.selectedCfg = null;
+          this.selectedSession = null;
+          this.destroyChart();
+          this.destroyCy();
+          this.editMode = 'view';
+          this.cfgMode = 'view';
+          if (this.globalFiles.length === 0) await this.loadGlobalFiles();
+        },
+
+        async loadGlobalFiles() {
+          this.isLoadingGlobal = true;
+          try {
+            this.globalFiles = await fetch('/api/global').then(r => r.json());
+          } catch {
+            this.notify('Failed to load global files', true);
+          } finally {
+            this.isLoadingGlobal = false;
+          }
+        },
+
+        async selectGlobalFile(f) {
+          if (!f.exists) {
+            this.selectedCfg = { ...f, content: '' };
+            this.selectedCfgScope = 'global';
+            this.selectedMemory = null;
+            this.cfgMode = 'edit';
+            this.cfgContent = '';
+            return;
+          }
+          try {
+            const data = await fetch(`/api/global/file?name=${enc(f.name)}`).then(r => r.json());
+            this.selectedCfg = data;
+            this.selectedCfgScope = 'global';
+            this.selectedMemory = null;
+            this.cfgMode = data.file_type === 'markdown' ? 'view' : 'view';
+          } catch {
+            this.notify('Failed to load file', true);
+          }
+        },
+
+        // ── project config files ──
+        async selectProjectConfigFile(f) {
+          if (!f.path) return;
+          if (!f.exists) {
+            this.selectedCfg = { ...f, content: '' };
+            this.selectedCfgScope = 'project';
+            this.selectedMemory = null;
+            this.cfgMode = 'edit';
+            this.cfgContent = '';
+            return;
+          }
+          try {
+            const params = `project_id=${enc(this.selectedProject.id)}&name=${enc(f.name)}`;
+            const data = await fetch(`/api/project-config/file?${params}`).then(r => r.json());
+            this.selectedCfg = data;
+            this.selectedCfgScope = 'project';
+            this.selectedMemory = null;
+            this.cfgMode = 'view';
+          } catch {
+            this.notify('Failed to load file', true);
+          }
+        },
+
+        startCfgEdit() {
+          this.cfgContent = this.selectedCfg?.content || '';
+          this.cfgMode = 'edit';
+        },
+
+        cancelCfgEdit() {
+          if (this.selectedCfg && !this.selectedCfg.exists) {
+            this.selectedCfg = null;
+            this.selectedCfgScope = null;
+          } else {
+            this.cfgMode = 'view';
+          }
+        },
+
+        async saveCfg() {
+          if (this.isSaving) return;
+          this.isSaving = true;
+          try {
+            let res;
+            if (this.selectedCfgScope === 'global') {
+              res = await fetch(`/api/global/file?name=${enc(this.selectedCfg.name)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ raw_content: this.cfgContent }),
+              });
+            } else {
+              const params = `project_id=${enc(this.selectedProject.id)}&name=${enc(this.selectedCfg.name)}`;
+              res = await fetch(`/api/project-config/file?${params}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ raw_content: this.cfgContent }),
+              });
+            }
+            if (!res.ok) throw new Error((await res.json()).detail || 'Save failed');
+            const saved = await res.json();
+            this.selectedCfg = saved;
+            // refresh lists
+            if (this.selectedCfgScope === 'global') {
+              const i = this.globalFiles.findIndex(f => f.name === saved.name);
+              if (i >= 0) this.globalFiles[i] = { ...saved };
+            } else {
+              const i = this.projectConfig.findIndex(f => f.name === saved.name);
+              if (i >= 0) this.projectConfig[i] = { ...saved };
+            }
+            this.cfgMode = 'view';
+            this.notify('Saved');
+          } catch (e) {
+            this.notify(e.message, true);
+          } finally {
+            this.isSaving = false;
           }
         },
 
@@ -418,6 +1154,8 @@
           try {
             const data = await fetch(`/api/memories/file?project_id=${enc(m.project_id)}&filename=${enc(m.filename)}`).then(r => r.json());
             this.selectedMemory = data;
+            this.selectedCfg = null;
+            this.selectedCfgScope = null;
             this.editMode = 'view';
           } catch {
             this.notify('Failed to load file', true);
@@ -436,9 +1174,6 @@
 
         cancelEdit() {
           this.editMode = 'view';
-          if (!this.selectedMemory) {
-            // came from new-form with nothing previously selected — keep view empty
-          }
         },
 
         async saveMemory() {
@@ -453,7 +1188,40 @@
             });
             if (!res.ok) throw new Error((await res.json()).detail || 'Save failed');
             this.selectedMemory = await res.json();
-            // sync list entry
+            const i = this.memories.findIndex(m => m.filename === this.selectedMemory.filename);
+            if (i >= 0) this.memories[i] = { ...this.selectedMemory };
+            this.editMode = 'view';
+            this.notify('Saved');
+          } catch (e) {
+            this.notify(e.message, true);
+          } finally {
+            this.isSaving = false;
+          }
+        },
+
+        async startRaw() {
+          try {
+            const params = `project_id=${enc(this.selectedMemory.project_id)}&filename=${enc(this.selectedMemory.filename)}`;
+            const text = await fetch(`/api/memories/raw?${params}`).then(r => r.text());
+            this.rawContent = text;
+            this.editMode = 'raw';
+          } catch {
+            this.notify('Failed to load raw content', true);
+          }
+        },
+
+        async saveRaw() {
+          if (this.isSaving) return;
+          this.isSaving = true;
+          try {
+            const params = `project_id=${enc(this.selectedMemory.project_id)}&filename=${enc(this.selectedMemory.filename)}`;
+            const res = await fetch(`/api/memories/raw?${params}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ raw_content: this.rawContent }),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Save failed');
+            this.selectedMemory = await res.json();
             const i = this.memories.findIndex(m => m.filename === this.selectedMemory.filename);
             if (i >= 0) this.memories[i] = { ...this.selectedMemory };
             this.editMode = 'view';
@@ -468,6 +1236,7 @@
         // ── new memory ──
         startNew() {
           this.selectedMemory = null;
+          this.selectedCfg = null;
           this.editMode = 'new';
           this.editForm = { name: '', description: '', type: 'feedback', body: '' };
           this.newFilename = '';
@@ -503,6 +1272,7 @@
             const created = await res.json();
             this.memories.push({ ...created });
             this.selectedMemory = created;
+            this.selectedCfg = null;
             this.editMode = 'view';
             const proj = this.projects.find(p => p.id === this.selectedProject.id);
             if (proj) proj.memory_count++;
@@ -564,10 +1334,60 @@
           if (mem) await this.selectMemory(mem);
         },
 
+        // ── computed-ish ──
+        get totalProjectsTokens() {
+          return this.projects.reduce((sum, p) => sum + (p.total_tokens || 0), 0);
+        },
+
+        get totalGlobalTokens() {
+          return this.globalFiles.reduce((sum, f) => sum + (f.tokens || 0), 0);
+        },
+
+        get totalMemoryTokens() {
+          return this.memories.reduce((sum, m) => sum + (m.tokens || 0), 0);
+        },
+
         // ── helpers ──
+        fmtSize(b) {
+          b = b || 0;
+          if (b < 1024) return b + 'B';
+          if (b < 1024 * 1024) return (b / 1024).toFixed(0) + 'KB';
+          return (b / 1024 / 1024).toFixed(1) + 'MB';
+        },
+
+        fmtRelativeTime(epochSeconds) {
+          const now = Date.now() / 1000;
+          const diff = now - epochSeconds;
+          if (diff < 60) return 'just now';
+          if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+          if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+          if (diff < 86400 * 7) return Math.floor(diff / 86400) + 'd ago';
+          const date = new Date(epochSeconds * 1000);
+          return date.toISOString().slice(0, 10);
+        },
+
+        decodeProj(projectId) {
+          let s = (projectId || '').replace(/-{2,}/g, '/');
+          if (s.startsWith('-')) s = '/' + s.slice(1);
+          return s;
+        },
+
+        fmtTok(n) {
+          n = n || 0;
+          if (n < 1000) return n.toString();
+          if (n < 10000) return (n / 1000).toFixed(1) + 'k';
+          return Math.round(n / 1000) + 'k';
+        },
+
         renderMd(text) {
           if (!text) return '';
           return marked.parse(text);
+        },
+
+        formatJson(text) {
+          if (!text) return '';
+          try { return JSON.stringify(JSON.parse(text), null, 2); }
+          catch { return text; }
         },
 
         badge(type) {

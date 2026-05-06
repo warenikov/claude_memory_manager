@@ -6,6 +6,16 @@ class Project(BaseModel):
     id: str
     label: str
     memory_count: int
+    total_tokens: int = 0
+
+
+class ConfigFile(BaseModel):
+    name: str
+    path: str
+    exists: bool
+    file_type: str   # "markdown" | "json"
+    content: str = ""
+    tokens: int = 0
 
 
 class MemoryMeta(BaseModel):
@@ -15,10 +25,16 @@ class MemoryMeta(BaseModel):
     type: str
     project_id: str
     is_index: bool
+    tokens: int = 0
 
 
 class MemoryFile(MemoryMeta):
     body: str
+    file_path: str = ""
+
+
+class RawUpdate(BaseModel):
+    raw_content: str
 
 
 class MemoryUpdate(BaseModel):

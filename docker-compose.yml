@@ -3,10 +3,13 @@ services:
     build: .
     container_name: claude-memory-manager
     ports:
-      - "8080:8080"
+      - "${HOST_PORT:-8081}:8080"
     volumes:
       - ~/.claude:/data:rw
+      - ~:/host-home:ro
     environment:
       - CLAUDE_DIR=/data
       - READ_ONLY=false
+      - HOST_HOME=/host-home
+      - HOST_HOME_REAL=${HOME:-${USERPROFILE}}
     restart: unless-stopped

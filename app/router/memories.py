@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from app.models import MemoryCreate, MemoryFile, MemoryMeta, MemoryUpdate
+from app.models import MemoryCreate, MemoryFile, MemoryMeta, MemoryUpdate, RawUpdate
 from app.services import fs
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
@@ -38,6 +38,36 @@ def update_memory(
 ):
     try:
         return fs.write_memory(project_id, filename, update)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/raw", response_class=Response)
+def get_raw(
+    project_id: str = Query(...),
+    filename: str = Query(...),
+):
+    try:
+        content = fs.read_raw(project_id, filename)
+        return Response(content=content, media_type="text/plain; charset=utf-8")
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.put("/raw", response_model=MemoryFile)
+def update_raw(
+    update: RawUpdate,
+    project_id: str = Query(...),
+    filename: str = Query(...),
+):
+    try:
+        return fs.write_raw(project_id, filename, update)
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except FileNotFoundError as e:
