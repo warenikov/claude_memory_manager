@@ -1,6 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from app.services import logs
 
@@ -10,6 +11,20 @@ router = APIRouter(prefix="/api/logs", tags=["logs"])
 @router.get("/sessions")
 def sessions(project_id: Optional[str] = None, days: int = Query(30, ge=0, le=3650)):
     return logs.list_sessions(project_id, days)
+
+
+@router.get("/live")
+async def live():
+    """Server-sent events stream of file-touch events as Claude works."""
+    return StreamingResponse(
+        logs.live_event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/session-detail")

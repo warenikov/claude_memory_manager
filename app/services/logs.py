@@ -1,8 +1,9 @@
+import asyncio
 import json
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import AsyncIterator, Iterable, Optional
 
 from app.config import PROJECTS_DIR
 
@@ -318,6 +319,11 @@ def get_session_detail(session_id: str, project_id: Optional[str] = None) -> Opt
         for (a, b), w in edges_count.most_common(300)
     ]
 
+    sequence = [
+        {"ts": e["ts"], "tool": e["tool"], "file": e["f"], "label": Path(e["f"]).name}
+        for e in file_events
+    ]
+
     return {
         "session_id": session_id,
         "project_id": target.parent.name,
@@ -330,6 +336,7 @@ def get_session_detail(session_id: str, project_id: Optional[str] = None) -> Opt
         },
         "token_burn": burn,
         "file_graph": {"nodes": nodes, "edges": edges},
+        "sequence": sequence,
     }
 
 
@@ -366,3 +373,97 @@ def get_stats(project_id: Optional[str] = None, days: int = 30):
         },
         "tools": dict(tool_counts),
     }
+
+
+async def live_event_stream(active_window_minutes: int = 10,
+                            tick_seconds: float = 1.5) -> AsyncIterator[str]:
+    """SSE-friendly async generator: yields `data:` chunks as Claude touches files.
+
+    Strategy: poll only files modified within `active_window_minutes`, read new
+    bytes after the last seen offset, parse new lines, send file-events.
+    First observation of a file establishes its offset at the current size, so
+    historical content is never replayed (use the Sessions tab for that).
+    """
+    offsets: dict = {}                 # path-string -> last byte offset read
+    file_list_cache: list = []
+    last_refresh_loop = 0.0
+
+    # Tell the client our refresh cadence so it can render a Grafana-style
+    # "every 1.5s" label without hardcoding the interval.
+    yield f"event: config\ndata: {json.dumps({'tick_ms': int(tick_seconds * 1000)})}\n\n"
+
+    while True:
+        loop_now = asyncio.get_event_loop().time()
+
+        # Refresh the file list every 10s to pick up brand-new sessions.
+        if loop_now - last_refresh_loop > 10:
+            file_list_cache = list(_iter_jsonl_files())
+            last_refresh_loop = loop_now
+
+        cutoff_ts = (datetime.now() - timedelta(minutes=active_window_minutes)).timestamp()
+        new_events: list = []
+
+        for path in file_list_cache:
+            try:
+                st = path.stat()
+            except OSError:
+                continue
+            if st.st_mtime < cutoff_ts:
+                continue
+
+            key = str(path)
+            last = offsets.get(key)
+            if last is None:
+                # First time we see this active file: skip backlog.
+                offsets[key] = st.st_size
+                continue
+            if st.st_size <= last:
+                if st.st_size < last:
+                    offsets[key] = st.st_size  # truncated/rotated
+                continue
+
+            try:
+                with path.open("rb") as f:
+                    f.seek(last)
+                    chunk = f.read()
+            except OSError:
+                continue
+
+            # Only consume up to the last newline — last line might be partial.
+            last_nl = chunk.rfind(b"\n")
+            if last_nl < 0:
+                continue
+            consume = chunk[:last_nl + 1]
+            offsets[key] = last + len(consume)
+
+            proj_id = path.parent.name
+            sid = path.stem
+            for raw_line in consume.split(b"\n"):
+                if not raw_line:
+                    continue
+                try:
+                    d = json.loads(raw_line.decode("utf-8", errors="replace"))
+                except Exception:
+                    continue
+                for e in _parse_line(d, proj_id):
+                    e["session_id"] = sid
+                    new_events.append(e)
+
+        file_events = [
+            {
+                "ts": e["ts"],
+                "tool": e["tool"],
+                "file": e["f"],
+                "label": Path(e["f"]).name,
+                "session_id": e["session_id"],
+                "project_id": e["p"],
+            }
+            for e in new_events if e["kind"] == "file"
+        ]
+        # Always send a data tick (empty array if no new events). This serves
+        # double duty: keeps the SSE connection alive through proxies, and lets
+        # the client display a Grafana-style "refreshed Ns ago" indicator that
+        # honestly reflects when the server last checked the files.
+        yield f"data: {json.dumps(file_events)}\n\n"
+
+        await asyncio.sleep(tick_seconds)

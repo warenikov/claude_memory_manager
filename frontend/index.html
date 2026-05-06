@@ -187,16 +187,31 @@
       <!-- Middle header -->
       <div class="px-3 py-2 flex items-center justify-between border-b border-gray-800 flex-shrink-0 gap-2">
         <div class="flex items-center gap-2 min-w-0">
-          <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider truncate"
+          <span x-show="viewMode !== 'activity'" class="text-xs font-semibold text-gray-600 uppercase tracking-wider truncate"
                 x-text="viewMode === 'global' ? 'Global Config'
-                      : viewMode === 'activity' ? 'Sessions'
                       : (selectedProject ? 'Memory Files' : 'Select a project')"></span>
+
+          <!-- Activity sub-tabs -->
+          <div x-show="viewMode === 'activity'" class="flex items-center bg-gray-800 rounded p-0.5 gap-0.5">
+            <button @click="setActMode('sessions')"
+                    :class="actMode === 'sessions' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                    class="px-2 py-0.5 text-xs rounded transition-colors">Sessions</button>
+            <button @click="setActMode('live')"
+                    :class="actMode === 'live' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                    class="px-2 py-0.5 text-xs rounded flex items-center gap-1 transition-colors">
+              <span>Live</span>
+              <span x-show="liveConnected" class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+            </button>
+          </div>
+
           <span x-show="viewMode === 'global'" class="text-xs text-gray-700 tabular-nums flex-shrink-0"
                 x-text="`~${fmtTok(totalGlobalTokens)} tok`"></span>
           <span x-show="viewMode === 'projects' && selectedProject" class="text-xs text-gray-700 tabular-nums flex-shrink-0"
                 x-text="`~${fmtTok(totalMemoryTokens)} tok`"></span>
-          <span x-show="viewMode === 'activity'" class="text-xs text-gray-700 tabular-nums flex-shrink-0"
-                x-text="`${sessions.length}`"></span>
+          <span x-show="viewMode === 'activity' && actMode === 'sessions'"
+                class="text-xs text-gray-700 tabular-nums flex-shrink-0"
+                title="Sessions matching current Project/Days filter"
+                x-text="`${sessions.length} sessions`"></span>
         </div>
         <button
           x-show="viewMode === 'projects' && selectedProject && !isReadOnly"
@@ -230,8 +245,64 @@
         </template>
       </div>
 
+      <!-- Activity → Live controls -->
+      <div x-show="viewMode === 'activity' && actMode === 'live'" class="flex-1 flex flex-col gap-3 p-3 overflow-y-auto">
+        <div class="bg-gray-900 rounded p-3 border border-gray-800">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="w-2 h-2 rounded-full transition-all duration-200 flex-shrink-0"
+                  :class="!liveConnected
+                          ? 'bg-gray-600'
+                          : liveStale
+                            ? 'bg-amber-500 ring-2 ring-amber-500/30'
+                            : liveSyncing
+                              ? 'bg-green-300 scale-150 ring-4 ring-green-400/40'
+                              : 'bg-green-500'"></span>
+            <span class="text-gray-300"
+                  x-text="!liveConnected
+                          ? 'Connecting…'
+                          : liveStale
+                            ? 'Stale connection'
+                            : 'Connected'"></span>
+          </div>
+          <div class="text-xs text-gray-500 mt-1.5 tabular-nums" x-show="liveConnected">
+            <span x-text="`Refreshed ${liveSyncAgo}`"></span>
+            <span class="text-gray-700">·</span>
+            <span x-text="`every ${liveTickLabel}`"></span>
+          </div>
+          <div class="text-xs text-gray-600 mt-2 leading-relaxed">
+            Open Claude Code in any project — <code class="text-gray-500">Read</code>/<code class="text-gray-500">Edit</code>/<code class="text-gray-500">Write</code> events will show up here as they happen.
+          </div>
+          <div class="text-xs text-gray-700 mt-2 tabular-nums">
+            <span x-text="liveEvents.length"></span> showing
+            <span class="text-gray-800">·</span>
+            <span x-text="liveCount"></span> total since open
+          </div>
+        </div>
+
+        <button @click="livePaused = !livePaused"
+                :class="livePaused ? 'bg-amber-900/60 text-amber-200 border-amber-800/60' : 'bg-gray-800 hover:bg-gray-700 text-gray-300 border-gray-700'"
+                class="px-3 py-1.5 text-xs rounded border transition-colors">
+          <span x-text="livePaused ? '▶  Resume' : '⏸  Pause'"></span>
+        </button>
+        <button @click="liveEvents = []"
+                class="px-3 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 rounded border border-gray-700">
+          Clear feed
+        </button>
+
+        <div>
+          <label class="text-xs text-gray-600 block mb-1">Filter by project</label>
+          <select x-model="actFilter.project_id"
+                  class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-amber-500">
+            <option value="">All projects</option>
+            <template x-for="p in projects" :key="p.id">
+              <option :value="p.id" x-text="shortLabel(p.label)"></option>
+            </template>
+          </select>
+        </div>
+      </div>
+
       <!-- Activity sessions list -->
-      <div x-show="viewMode === 'activity'" class="flex-1 flex flex-col overflow-hidden">
+      <div x-show="viewMode === 'activity' && actMode === 'sessions'" class="flex-1 flex flex-col overflow-hidden">
         <!-- Filters -->
         <div class="px-3 py-2 border-b border-gray-800/60 flex flex-col gap-2 flex-shrink-0">
           <div class="flex items-center gap-2">
@@ -345,7 +416,7 @@
     <div class="flex-1 flex flex-col overflow-hidden min-w-0">
 
       <!-- Empty state -->
-      <div x-show="!selectedMemory && !selectedCfg && !selectedSession && editMode !== 'new'"
+      <div x-show="!selectedMemory && !selectedCfg && !selectedSession && editMode !== 'new' && !(viewMode === 'activity' && actMode === 'live')"
            class="flex-1 flex items-center justify-center text-gray-800">
         <div class="text-center">
           <div class="text-5xl mb-3 opacity-30"
@@ -602,8 +673,69 @@
         </div>
       </template>
 
+      <!-- ────────── Live feed (Activity → Live) ────────── -->
+      <template x-if="viewMode === 'activity' && actMode === 'live'">
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-2.5 flex-shrink-0">
+            <span class="text-xs px-1.5 py-0.5 rounded font-mono uppercase bg-amber-900/60 text-amber-300">LIVE FEED</span>
+
+            <!-- Grafana-style refresh indicator -->
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full transition-all duration-200 flex-shrink-0"
+                    :class="!liveConnected
+                            ? 'bg-gray-600'
+                            : liveStale
+                              ? 'bg-amber-500 ring-2 ring-amber-500/30'
+                              : liveSyncing
+                                ? 'bg-green-400 ring-2 ring-green-400/25'
+                                : 'bg-green-500/80'"></span>
+              <span class="text-xs text-gray-500 tabular-nums"
+                    x-text="!liveConnected
+                            ? 'connecting…'
+                            : liveStale
+                              ? `stale · last ${liveSyncAgo}`
+                              : `refreshed ${liveSyncAgo}`"></span>
+              <span x-show="liveConnected" class="text-xs text-gray-700"
+                    x-text="`· every ${liveTickLabel}`"></span>
+            </div>
+
+            <span x-show="livePaused" class="text-xs text-amber-400 px-1.5 py-0.5 rounded bg-amber-950/60">paused</span>
+            <div class="flex-1"></div>
+            <span class="text-xs text-gray-600 tabular-nums" x-text="`${filteredLiveEvents.length} / ${liveEvents.length}`"></span>
+          </div>
+
+          <div x-ref="liveFeed" class="flex-1 overflow-y-auto bg-gray-950">
+            <div x-show="filteredLiveEvents.length === 0" class="p-8 text-center text-xs text-gray-700 leading-relaxed">
+              <div class="text-3xl mb-3 opacity-30">⏳</div>
+              Waiting for events…<br>
+              <span x-show="!liveConnected" class="text-gray-800">Establishing connection…</span>
+              <span x-show="liveConnected" class="text-gray-800">Run Claude Code in any project — Read/Edit/Write calls will land here.</span>
+            </div>
+            <template x-for="(e, idx) in filteredLiveEvents" :key="idx">
+              <div @contextmenu.prevent="showFileMenu($event, e.file, e.label)"
+                   class="flex items-baseline gap-3 px-4 py-1.5 border-b border-gray-800/40 hover:bg-gray-900/60 group">
+                <span class="text-xs text-gray-600 font-mono tabular-nums w-16 flex-shrink-0" x-text="fmtSeqTime(e.ts)"></span>
+                <span :class="toolBadge(e.tool)"
+                      class="text-xs px-1.5 py-0.5 rounded font-mono uppercase w-16 text-center flex-shrink-0"
+                      x-text="e.tool"></span>
+                <span x-show="!actFilter.project_id"
+                      :class="projectColor(e.project_id)"
+                      class="text-xs px-1.5 py-0.5 rounded font-mono truncate max-w-[200px] flex-shrink-0"
+                      :title="decodeProj(e.project_id)"
+                      x-text="shortLabel(decodeProj(e.project_id))"></span>
+                <span class="text-xs text-gray-700 font-mono truncate max-w-[80px] flex-shrink-0 hidden lg:inline"
+                      :title="`session ${e.session_id}`"
+                      x-text="(e.session_id || '').slice(0,8)"></span>
+                <span class="text-xs text-gray-300 flex-shrink-0 max-w-xs truncate" :title="e.file" x-text="e.label"></span>
+                <span class="text-xs text-gray-700 truncate min-w-0" :title="e.file" x-text="dirPart(e.file)"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
       <!-- ────────── Session detail (Activity) ────────── -->
-      <template x-if="selectedSession && viewMode === 'activity'">
+      <template x-if="selectedSession && viewMode === 'activity' && actMode === 'sessions'">
         <div class="flex-1 flex flex-col overflow-hidden">
           <!-- Header -->
           <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-2.5 flex-shrink-0">
@@ -627,6 +759,9 @@
               <button @click="actTab = 'graph'; renderActTab()"
                       :class="actTab === 'graph' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
                       class="px-2.5 py-1 text-xs rounded transition-colors">File Graph</button>
+              <button @click="actTab = 'sequence'; renderActTab()"
+                      :class="actTab === 'sequence' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Sequence</button>
             </div>
           </div>
 
@@ -661,6 +796,58 @@
             </div>
           </div>
 
+          <!-- Sequence tab -->
+          <div x-show="!isLoadingDetail && actTab === 'sequence'" class="flex-1 flex flex-col overflow-hidden p-4">
+            <!-- Filter row -->
+            <div class="flex items-center gap-2 mb-2 flex-shrink-0 text-xs">
+              <input type="text" x-model="seqFilter"
+                     placeholder="Filter by filename or path…"
+                     class="bg-gray-800 border border-gray-700 rounded px-2.5 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-amber-500 w-56" />
+              <div class="flex items-center bg-gray-800 rounded p-0.5 gap-0.5">
+                <template x-for="t in ['Read','Edit','Write','MultiEdit','NotebookEdit']" :key="t">
+                  <button @click="seqTools[t] = !seqTools[t]"
+                          :class="seqTools[t] ? toolBadge(t) : 'text-gray-600 hover:text-gray-400'"
+                          class="px-2 py-0.5 text-xs rounded transition-colors font-mono"
+                          x-text="t"></button>
+                </template>
+              </div>
+              <div class="flex-1"></div>
+              <span class="text-gray-600 tabular-nums"
+                    x-text="`${visibleSequence.length} / ${sessionDetail?.sequence?.length || 0}`"></span>
+            </div>
+
+            <!-- Event list -->
+            <div class="flex-1 overflow-y-auto bg-gray-900 rounded border border-gray-800">
+              <template x-for="(item, idx) in sequenceItems" :key="idx">
+                <div>
+                  <!-- Day separator -->
+                  <div x-show="item.kind === 'sep'"
+                       class="px-3 py-1 text-xs text-gray-500 bg-gray-950 border-y border-gray-800/80 font-mono tracking-wider sticky top-0 z-10">
+                    <span x-text="item.day"></span>
+                  </div>
+                  <!-- Event row -->
+                  <div x-show="item.kind === 'evt'"
+                       @contextmenu.prevent="showFileMenu($event, item.file, item.label)"
+                       class="flex items-baseline gap-3 px-3 py-1.5 border-b border-gray-800/40 hover:bg-gray-800/40 transition-colors group">
+                    <span class="text-xs text-gray-600 font-mono tabular-nums w-16 flex-shrink-0"
+                          x-text="fmtSeqTime(item.ts)"></span>
+                    <span :class="toolBadge(item.tool)"
+                          class="text-xs px-1.5 py-0.5 rounded font-mono uppercase w-16 text-center flex-shrink-0"
+                          x-text="item.tool"></span>
+                    <span class="text-xs text-gray-300 flex-shrink-0 max-w-xs truncate"
+                          :title="item.file" x-text="item.label"></span>
+                    <span class="text-xs text-gray-700 truncate min-w-0" :title="item.file"
+                          x-text="dirPart(item.file)"></span>
+                    <span class="text-xs text-gray-700 opacity-0 group-hover:opacity-100 flex-shrink-0">right-click</span>
+                  </div>
+                </div>
+              </template>
+              <div x-show="visibleSequence.length === 0" class="px-3 py-3 text-xs text-gray-700">
+                No matching events
+              </div>
+            </div>
+          </div>
+
           <!-- File Graph tab -->
           <div x-show="!isLoadingDetail && actTab === 'graph'" class="flex-1 flex flex-col overflow-hidden p-4">
             <div class="flex items-center gap-3 mb-2 flex-shrink-0 text-xs text-gray-500">
@@ -689,6 +876,31 @@
 
     </div><!-- /right -->
   </div><!-- /main -->
+
+  <!-- ═══ Cytoscape node context menu ═══ -->
+  <div x-show="cyMenu.visible"
+       @click.outside="cyMenu.visible = false"
+       :style="`top: ${cyMenu.y}px; left: ${cyMenu.x}px`"
+       class="fixed z-50 bg-gray-800 border border-gray-700 rounded shadow-2xl py-1 min-w-[200px]"
+       @keydown.escape.window="cyMenu.visible = false">
+    <div class="px-3 py-1 text-xs text-gray-500 font-mono truncate border-b border-gray-700/60 mb-1"
+         x-text="cyMenu.filename"></div>
+    <button @click="copyToClipboard(cyMenu.path, 'Path copied')"
+            class="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 flex items-center gap-2">
+      <span class="text-gray-500 w-4 text-center">⧉</span>
+      <span>Copy full path</span>
+    </button>
+    <button @click="copyToClipboard(cyMenu.filename, 'Filename copied')"
+            class="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 flex items-center gap-2">
+      <span class="text-gray-500 w-4 text-center">📄</span>
+      <span>Copy filename</span>
+    </button>
+    <button @click="copyToClipboard(cyMenu.dir, 'Directory copied')"
+            class="w-full text-left px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-700 flex items-center gap-2">
+      <span class="text-gray-500 w-4 text-center">📁</span>
+      <span>Copy parent directory</span>
+    </button>
+  </div>
 
   <!-- ═══ Toast notification ═══ -->
   <div
@@ -738,6 +950,25 @@
         chartInstance: null,
         cyInstance: null,
         cyHover: null,
+        cyMenu: { visible: false, x: 0, y: 0, path: '', filename: '', dir: '' },
+
+        // sequence tab
+        seqFilter: '',
+        seqTools: { Read: true, Edit: true, Write: true, MultiEdit: true, NotebookEdit: true },
+
+        // live feed
+        actMode: 'sessions',           // 'sessions' | 'live'
+        liveSource: null,
+        liveEvents: [],
+        liveCount: 0,                  // total events received this session
+        liveConnected: false,
+        livePaused: false,
+        liveLastSync: 0,               // epoch ms of last server tick received
+        liveNow: Date.now(),           // ticked every 1s for "Ns ago" display
+        liveSyncing: false,            // briefly true on each tick (pulse animation)
+        liveTickMs: 1500,              // server-reported refresh cadence
+        _liveNowT: null,
+        _liveSyncT: null,
         selectedProject: null,
         memories: [],
         selectedMemory: null,
@@ -786,6 +1017,7 @@
         },
 
         async selectProject(p) {
+          this.stopLive();
           this.selectedProject = p;
           this.selectedMemory = null;
           this.selectedCfg = null;
@@ -820,7 +1052,121 @@
           this.cfgMode = 'view';
           this.destroyChart();
           this.destroyCy();
-          await this.loadSessions();
+          if (this.actMode === 'live') {
+            this.startLive();
+          } else {
+            await this.loadSessions();
+          }
+        },
+
+        setActMode(mode) {
+          if (this.actMode === mode) return;
+          this.actMode = mode;
+          this.selectedSession = null;
+          this.destroyChart();
+          this.destroyCy();
+          if (mode === 'live') {
+            this.startLive();
+          } else {
+            this.stopLive();
+            this.loadSessions();
+          }
+        },
+
+        startLive() {
+          this.stopLive();
+          this.liveEvents = [];
+          this.liveCount = 0;
+          this.liveConnected = false;
+          this.liveLastSync = 0;
+
+          const es = new EventSource('/api/logs/live');
+          this.liveSource = es;
+
+          es.onopen = () => { this.liveConnected = true; };
+
+          // Server tells us its refresh cadence on connect.
+          es.addEventListener('config', (msg) => {
+            try {
+              const cfg = JSON.parse(msg.data);
+              if (cfg.tick_ms) this.liveTickMs = cfg.tick_ms;
+            } catch {}
+          });
+
+          es.onmessage = (msg) => {
+            this.markSync();
+            if (this.livePaused) return;
+            try {
+              const events = JSON.parse(msg.data);
+              if (!Array.isArray(events) || events.length === 0) return;
+              this.liveCount += events.length;
+              this.liveEvents.push(...events);
+              // cap memory: keep last 500
+              if (this.liveEvents.length > 500) {
+                this.liveEvents.splice(0, this.liveEvents.length - 500);
+              }
+              this.$nextTick(() => {
+                const el = this.$refs.liveFeed;
+                if (!el) return;
+                // auto-scroll only if user is already near bottom
+                const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+                if (nearBottom) el.scrollTop = el.scrollHeight;
+              });
+            } catch {}
+          };
+
+          es.onerror = () => { this.liveConnected = false; };
+
+          // Tick every second so "Ns ago" labels update without explicit data.
+          if (this._liveNowT) clearInterval(this._liveNowT);
+          this._liveNowT = setInterval(() => { this.liveNow = Date.now(); }, 1000);
+        },
+
+        stopLive() {
+          if (this.liveSource) {
+            try { this.liveSource.close(); } catch {}
+            this.liveSource = null;
+          }
+          if (this._liveNowT) { clearInterval(this._liveNowT); this._liveNowT = null; }
+          if (this._liveSyncT) { clearTimeout(this._liveSyncT); this._liveSyncT = null; }
+          this.liveConnected = false;
+          this.liveSyncing = false;
+        },
+
+        markSync() {
+          this.liveLastSync = Date.now();
+          this.liveNow = this.liveLastSync;
+          this.liveSyncing = true;
+          if (this._liveSyncT) clearTimeout(this._liveSyncT);
+          this._liveSyncT = setTimeout(() => { this.liveSyncing = false; }, 180);
+        },
+
+        get liveSyncAgo() {
+          if (!this.liveLastSync) return '—';
+          const diff = Math.max(0, Math.floor((this.liveNow - this.liveLastSync) / 1000));
+          if (diff < 1) return 'now';
+          if (diff < 60) return `${diff}s ago`;
+          if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+          return `${Math.floor(diff / 3600)}h ago`;
+        },
+
+        // "1.5s" / "500ms" depending on tick cadence
+        get liveTickLabel() {
+          const ms = this.liveTickMs || 1500;
+          if (ms >= 1000) return `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1)}s`;
+          return `${ms}ms`;
+        },
+
+        // Stale if we haven't heard from server in 3× tick cadence
+        get liveStale() {
+          if (!this.liveConnected || !this.liveLastSync) return false;
+          return (this.liveNow - this.liveLastSync) > Math.max(5000, this.liveTickMs * 3);
+        },
+
+        get filteredLiveEvents() {
+          const pid = this.actFilter.project_id;
+          if (!pid) return this.liveEvents;
+          return this.liveEvents.filter(e => e.project_id === pid);
         },
 
         async loadSessions() {
@@ -863,8 +1209,52 @@
           // Two ticks: 1) Alpine flips x-show, 2) browser computes layout, then we measure & render.
           this.$nextTick(() => requestAnimationFrame(() => {
             if (this.actTab === 'burn') this.renderBurnChart();
-            else this.renderFileGraph();
+            else if (this.actTab === 'graph') this.renderFileGraph();
+            // 'sequence' is plain DOM, nothing to render imperatively
           }));
+        },
+
+        get visibleSequence() {
+          const seq = this.sessionDetail?.sequence || [];
+          const q = this.seqFilter.trim().toLowerCase();
+          return seq.filter(e =>
+            this.seqTools[e.tool] &&
+            (!q || (e.file || '').toLowerCase().includes(q) || (e.label || '').toLowerCase().includes(q))
+          );
+        },
+
+        // Newest-first list with day-separators injected when the LOCAL day
+        // rolls over. Iterating reversed (latest event first) puts the
+        // separator above the events of that day — natural ordering for
+        // an audit log (top = most recent).
+        get sequenceItems() {
+          const filtered = this.visibleSequence.slice().reverse();
+          const items = [];
+          let lastDay = '';
+          for (const e of filtered) {
+            const day = this.fmtLocalDate(e.ts);
+            if (day && day !== lastDay) {
+              items.push({ kind: 'sep', day });
+              lastDay = day;
+            }
+            items.push({ kind: 'evt', ...e });
+          }
+          return items;
+        },
+
+        showFileMenu(evt, fullPath, filename) {
+          if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+          const sep = fullPath && fullPath.includes('\\') ? '\\' : '/';
+          const lastSep = fullPath ? fullPath.lastIndexOf(sep) : -1;
+          const dir = lastSep > 0 ? fullPath.slice(0, lastSep) : (fullPath || '');
+          this.cyMenu = {
+            visible: true,
+            x: evt?.clientX || 0,
+            y: evt?.clientY || 0,
+            path: fullPath || '',
+            filename: filename || '',
+            dir,
+          };
         },
 
         renderBurnChart() {
@@ -1002,6 +1392,17 @@
             this.cyHover = null;
             this.cyInstance.elements().removeClass('faded highlight');
           });
+
+          // Right-click on a node → context menu
+          this.cyInstance.on('cxttap', 'node', evt => {
+            const data = evt.target.data();
+            this.showFileMenu(evt.originalEvent, data.path, data.label);
+          });
+
+          // Right-click on background or any non-node tap → close menu
+          this.cyInstance.on('cxttap tap', evt => {
+            if (evt.target === this.cyInstance) this.cyMenu.visible = false;
+          });
         },
 
         cyFitGraph() {
@@ -1015,6 +1416,7 @@
           if (this._cyResizeObs) { try { this._cyResizeObs.disconnect(); } catch {} this._cyResizeObs = null; }
           if (this.cyInstance) { try { this.cyInstance.destroy(); } catch {} this.cyInstance = null; }
           this.cyHover = null;
+          this.cyMenu.visible = false;
         },
 
         extColor(ext) {
@@ -1030,6 +1432,7 @@
 
         // ── global section ──
         async selectGlobalSection() {
+          this.stopLive();
           this.viewMode = 'global';
           this.selectedProject = null;
           this.selectedMemory = null;
@@ -1348,6 +1751,88 @@
         },
 
         // ── helpers ──
+        fmtSeqTime(ts) {
+          if (!ts) return '';
+          const d = new Date(ts);
+          if (isNaN(d.getTime())) {
+            const m = ts.match(/T(\d\d:\d\d:\d\d)/);
+            return m ? m[1] : ts.slice(0, 8);
+          }
+          return [d.getHours(), d.getMinutes(), d.getSeconds()]
+            .map(n => String(n).padStart(2, '0')).join(':');
+        },
+
+        fmtLocalDate(ts) {
+          if (!ts) return '';
+          const d = new Date(ts);
+          if (isNaN(d.getTime())) return ts.slice(0, 10);
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        },
+
+        dirPart(p) {
+          if (!p) return '';
+          const sep = p.includes('\\') ? '\\' : '/';
+          const i = p.lastIndexOf(sep);
+          return i > 0 ? p.slice(0, i) : '';
+        },
+
+        toolBadge(tool) {
+          return {
+            Read:         'bg-blue-900/60 text-blue-300',
+            Edit:         'bg-amber-900/60 text-amber-300',
+            Write:        'bg-red-900/60 text-red-300',
+            MultiEdit:    'bg-orange-900/60 text-orange-300',
+            NotebookEdit: 'bg-purple-900/60 text-purple-300',
+          }[tool] || 'bg-gray-800 text-gray-500';
+        },
+
+        // Deterministic color per project_id (same project = same color)
+        projectColor(projectId) {
+          if (!projectId) return 'bg-gray-800 text-gray-400';
+          let h = 0;
+          for (let i = 0; i < projectId.length; i++) {
+            h = ((h << 5) - h) + projectId.charCodeAt(i);
+            h |= 0;
+          }
+          const palette = [
+            'bg-blue-900/50 text-blue-300',
+            'bg-emerald-900/50 text-emerald-300',
+            'bg-violet-900/50 text-violet-300',
+            'bg-rose-900/50 text-rose-300',
+            'bg-cyan-900/50 text-cyan-300',
+            'bg-fuchsia-900/50 text-fuchsia-300',
+            'bg-lime-900/50 text-lime-300',
+            'bg-amber-900/50 text-amber-300',
+            'bg-pink-900/50 text-pink-300',
+            'bg-sky-900/50 text-sky-300',
+            'bg-teal-900/50 text-teal-300',
+            'bg-indigo-900/50 text-indigo-300',
+          ];
+          return palette[Math.abs(h) % palette.length];
+        },
+
+        async copyToClipboard(text, okMsg = 'Copied') {
+          this.cyMenu.visible = false;
+          if (!text) return;
+          try {
+            if (navigator.clipboard && window.isSecureContext) {
+              await navigator.clipboard.writeText(text);
+            } else {
+              const ta = document.createElement('textarea');
+              ta.value = text;
+              ta.style.position = 'fixed';
+              ta.style.opacity = '0';
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand('copy');
+              document.body.removeChild(ta);
+            }
+            this.notify(okMsg);
+          } catch {
+            this.notify('Copy failed', true);
+          }
+        },
+
         fmtSize(b) {
           b = b || 0;
           if (b < 1024) return b + 'B';
