@@ -147,6 +147,18 @@
         <span class="text-xs">Activity</span>
       </button>
 
+      <!-- ── Skills (single button) ── -->
+      <button
+        @click="selectSkillsSection()"
+        :class="viewMode === 'skills'
+          ? 'bg-cyan-950/60 text-cyan-200 border-l-2 border-cyan-500'
+          : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
+        class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
+      >
+        <span class="text-xs opacity-70">🛠</span>
+        <span class="text-xs">Skills</span>
+      </button>
+
       <div class="mx-3 my-2 border-t border-gray-800"></div>
 
       <!-- ── Projects section (accordion) ── -->
@@ -189,6 +201,7 @@
         <div class="flex items-center gap-2 min-w-0">
           <span x-show="viewMode !== 'activity'" class="text-xs font-semibold text-gray-600 uppercase tracking-wider truncate"
                 x-text="viewMode === 'global' ? 'Global Config'
+                      : viewMode === 'skills' ? 'Skills'
                       : (selectedProject ? 'Memory Files' : 'Select a project')"></span>
 
           <!-- Activity sub-tabs -->
@@ -212,6 +225,8 @@
                 class="text-xs text-gray-700 tabular-nums flex-shrink-0"
                 title="Sessions matching current Project/Days filter"
                 x-text="`${sessions.length} sessions`"></span>
+          <span x-show="viewMode === 'skills'" class="text-xs text-gray-700 tabular-nums flex-shrink-0"
+                x-text="`${visibleSkills.length} / ${skills.length}`"></span>
         </div>
         <button
           x-show="viewMode === 'projects' && selectedProject && !isReadOnly"
@@ -353,6 +368,38 @@
         </div>
       </div>
 
+      <!-- Skills list -->
+      <div x-show="viewMode === 'skills'" class="flex-1 flex flex-col overflow-hidden">
+        <div class="px-3 py-2 border-b border-gray-800/60 flex-shrink-0">
+          <input type="text" x-model="skillSearch"
+                 placeholder="Search by name or description…"
+                 class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-cyan-500" />
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          <div x-show="isLoadingSkills" class="px-3 py-3 text-xs text-gray-600">Loading…</div>
+          <div x-show="!isLoadingSkills && visibleSkills.length === 0"
+               class="px-3 py-3 text-xs text-gray-700">No skills</div>
+          <template x-for="s in visibleSkills" :key="s.id">
+            <button
+              @click="selectSkill(s)"
+              :class="selectedSkill?.id === s.id
+                ? 'bg-gray-800 border-l-2 border-cyan-500'
+                : 'border-l-2 border-transparent hover:bg-gray-900'"
+              class="w-full px-3 py-2 text-left transition-colors block">
+              <div class="flex items-center gap-1.5 mb-0.5">
+                <span class="text-xs px-1.5 py-0.5 rounded font-mono uppercase flex-shrink-0 leading-none"
+                      :class="s.skill_type === 'bundle' ? 'bg-cyan-900/60 text-cyan-300' : 'bg-indigo-900/60 text-indigo-300'"
+                      x-text="s.skill_type === 'bundle' ? 'BNDL' : 'YAML'"></span>
+                <span class="text-xs text-gray-300 truncate flex-1 leading-snug" x-text="s.name || s.id"></span>
+                <span class="text-xs text-gray-600 tabular-nums flex-shrink-0" x-text="`~${fmtTok(s.tokens)}`"></span>
+              </div>
+              <div x-show="s.description" class="text-xs text-gray-600 leading-snug line-clamp-2"
+                   x-text="s.description"></div>
+            </button>
+          </template>
+        </div>
+      </div>
+
       <!-- Memory + Config files list (projects mode) -->
       <div x-show="viewMode === 'projects'" class="flex-1 overflow-y-auto">
         <div x-show="isLoadingMemories" class="px-3 py-3 text-xs text-gray-600">Loading…</div>
@@ -416,13 +463,15 @@
     <div class="flex-1 flex flex-col overflow-hidden min-w-0">
 
       <!-- Empty state -->
-      <div x-show="!selectedMemory && !selectedCfg && !selectedSession && editMode !== 'new' && !(viewMode === 'activity' && actMode === 'live')"
+      <div x-show="!selectedMemory && !selectedCfg && !selectedSession && !selectedSkill && editMode !== 'new' && !(viewMode === 'activity' && actMode === 'live')"
            class="flex-1 flex items-center justify-center text-gray-800">
         <div class="text-center">
           <div class="text-5xl mb-3 opacity-30"
-               x-text="viewMode === 'activity' ? '📊' : '🧠'"></div>
+               x-text="viewMode === 'activity' ? '📊' : viewMode === 'skills' ? '🛠' : '🧠'"></div>
           <div class="text-sm text-gray-700"
-               x-text="viewMode === 'activity' ? 'Select a session to inspect' : 'Select a file to view'"></div>
+               x-text="viewMode === 'activity' ? 'Select a session to inspect'
+                     : viewMode === 'skills' ? 'Select a skill to view'
+                     : 'Select a file to view'"></div>
         </div>
       </div>
 
@@ -734,6 +783,74 @@
         </div>
       </template>
 
+      <!-- ────────── Skill viewer / editor ────────── -->
+      <template x-if="selectedSkill && viewMode === 'skills'">
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <!-- Header -->
+          <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-2.5 flex-shrink-0">
+            <span class="text-xs px-1.5 py-0.5 rounded font-mono uppercase"
+                  :class="selectedSkill.skill_type === 'bundle' ? 'bg-cyan-900/60 text-cyan-300' : 'bg-indigo-900/60 text-indigo-300'"
+                  x-text="selectedSkill.skill_type === 'bundle' ? 'BUNDLE' : 'YAML'"></span>
+            <span class="text-sm font-medium text-gray-300" x-text="selectedSkill.name || selectedSkill.id"></span>
+            <span class="text-xs text-gray-600 tabular-nums flex-shrink-0"
+                  x-text="`~${fmtTok(selectedSkill.tokens)} tok`"></span>
+            <span class="text-xs text-gray-600 font-mono truncate hidden md:block select-all"
+                  :title="selectedSkill.path" x-text="selectedSkill.path"></span>
+            <div class="flex-1"></div>
+
+            <!-- Preview / Edit tabs -->
+            <div class="flex items-center bg-gray-800 rounded p-0.5 gap-0.5">
+              <button @click="skillMode = 'view'"
+                      :class="skillMode === 'view' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Preview</button>
+              <button x-show="!isReadOnly"
+                      @click="startSkillEdit()"
+                      :class="skillMode === 'edit' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Edit</button>
+            </div>
+          </div>
+
+          <!-- VIEW: bundle (markdown) -->
+          <div x-show="skillMode === 'view' && selectedSkill.skill_type === 'bundle'"
+               class="flex-1 overflow-y-auto p-5">
+            <div x-show="selectedSkill.description"
+                 class="mb-4 p-3 bg-gray-900 rounded-lg border border-gray-800 text-xs text-gray-400 leading-relaxed"
+                 x-text="selectedSkill.description"></div>
+            <div class="prose text-sm leading-relaxed" x-html="renderMd(skillBody(selectedSkill.content))"></div>
+          </div>
+
+          <!-- VIEW: yaml -->
+          <div x-show="skillMode === 'view' && selectedSkill.skill_type === 'yaml'"
+               class="flex-1 overflow-y-auto p-4">
+            <div x-show="selectedSkill.description"
+                 class="mb-3 p-3 bg-gray-900 rounded-lg border border-gray-800 text-xs text-gray-400 leading-relaxed"
+                 x-text="selectedSkill.description"></div>
+            <pre class="text-xs text-gray-300 font-mono leading-relaxed whitespace-pre-wrap"
+                 x-text="selectedSkill.content"></pre>
+          </div>
+
+          <!-- EDIT -->
+          <div x-show="skillMode === 'edit'" class="flex-1 flex flex-col overflow-hidden p-4">
+            <label class="text-xs text-gray-500 block mb-1 flex-shrink-0">
+              <span x-text="selectedSkill.skill_type === 'bundle' ? 'SKILL.md (markdown + frontmatter)' : 'YAML'"></span>
+              <span class="text-gray-700 ml-1">Ctrl+S to save</span>
+            </label>
+            <textarea
+              x-model="skillContent"
+              @keydown.ctrl.s.prevent="saveSkill()"
+              class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-500 leading-relaxed"
+            ></textarea>
+            <div class="flex gap-2 mt-3 flex-shrink-0">
+              <button @click="saveSkill()" :disabled="isSaving"
+                      class="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs rounded transition-colors font-medium"
+                      x-text="isSaving ? 'Saving…' : 'Save'"></button>
+              <button @click="skillMode = 'view'"
+                      class="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <!-- ────────── Session detail (Activity) ────────── -->
       <template x-if="selectedSession && viewMode === 'activity' && actMode === 'sessions'">
         <div class="flex-1 flex flex-col overflow-hidden">
@@ -956,6 +1073,14 @@
         seqFilter: '',
         seqTools: { Read: true, Edit: true, Write: true, MultiEdit: true, NotebookEdit: true },
 
+        // skills
+        skills: [],
+        isLoadingSkills: false,
+        selectedSkill: null,
+        skillSearch: '',
+        skillMode: 'view',           // 'view' | 'edit'
+        skillContent: '',
+
         // live feed
         actMode: 'sessions',           // 'sessions' | 'live'
         liveSource: null,
@@ -1022,6 +1147,7 @@
           this.selectedMemory = null;
           this.selectedCfg = null;
           this.selectedSession = null;
+          this.selectedSkill = null;
           this.destroyChart();
           this.destroyCy();
           this.viewMode = 'projects';
@@ -1048,6 +1174,7 @@
           this.selectedProject = null;
           this.selectedMemory = null;
           this.selectedCfg = null;
+          this.selectedSkill = null;
           this.editMode = 'view';
           this.cfgMode = 'view';
           this.destroyChart();
@@ -1057,6 +1184,92 @@
           } else {
             await this.loadSessions();
           }
+        },
+
+        // ── skills section ──
+        async selectSkillsSection() {
+          this.stopLive();
+          this.viewMode = 'skills';
+          this.selectedProject = null;
+          this.selectedMemory = null;
+          this.selectedCfg = null;
+          this.selectedSession = null;
+          this.editMode = 'view';
+          this.cfgMode = 'view';
+          this.destroyChart();
+          this.destroyCy();
+          if (this.skills.length === 0) await this.loadSkills();
+        },
+
+        async loadSkills() {
+          this.isLoadingSkills = true;
+          try {
+            this.skills = await fetch('/api/skills').then(r => r.json());
+          } catch {
+            this.notify('Failed to load skills', true);
+          } finally {
+            this.isLoadingSkills = false;
+          }
+        },
+
+        async selectSkill(s) {
+          try {
+            const data = await fetch(`/api/skills/file?id=${enc(s.id)}`).then(r => r.json());
+            this.selectedSkill = data;
+            this.skillMode = 'view';
+          } catch {
+            this.notify('Failed to load skill', true);
+          }
+        },
+
+        startSkillEdit() {
+          this.skillContent = this.selectedSkill?.content || '';
+          this.skillMode = 'edit';
+        },
+
+        async saveSkill() {
+          if (this.isSaving || !this.selectedSkill) return;
+          this.isSaving = true;
+          try {
+            const res = await fetch(`/api/skills/file?id=${enc(this.selectedSkill.id)}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ raw_content: this.skillContent }),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Save failed');
+            const saved = await res.json();
+            this.selectedSkill = saved;
+            const i = this.skills.findIndex(s => s.id === saved.id);
+            if (i >= 0) this.skills[i] = { id: saved.id, name: saved.name, description: saved.description,
+                                            skill_type: saved.skill_type, path: saved.path, tokens: saved.tokens };
+            this.skillMode = 'view';
+            this.notify('Saved');
+          } catch (e) {
+            this.notify(e.message, true);
+          } finally {
+            this.isSaving = false;
+          }
+        },
+
+        get visibleSkills() {
+          const q = (this.skillSearch || '').trim().toLowerCase();
+          if (!q) return this.skills;
+          return this.skills.filter(s =>
+            (s.name || '').toLowerCase().includes(q) ||
+            (s.id || '').toLowerCase().includes(q) ||
+            (s.description || '').toLowerCase().includes(q)
+          );
+        },
+
+        // Strip frontmatter from SKILL.md body for Preview
+        skillBody(content) {
+          if (!content || !content.startsWith('---')) return content || '';
+          const end = content.indexOf('\n---', 4);
+          if (end < 0) return content;
+          // skip "\n---" + optional trailing newline
+          let i = end + 4;
+          if (content[i] === '\n') i++;
+          return content.slice(i);
         },
 
         setActMode(mode) {
@@ -1438,6 +1651,7 @@
           this.selectedMemory = null;
           this.selectedCfg = null;
           this.selectedSession = null;
+          this.selectedSkill = null;
           this.destroyChart();
           this.destroyCy();
           this.editMode = 'view';
