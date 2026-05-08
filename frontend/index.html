@@ -819,7 +819,9 @@
                     class="font-mono">← back</button>
             <span class="text-gray-700">|</span>
             <button @click="resetToSkillRoot()"
-                    class="text-gray-500 hover:text-gray-300 font-mono">SKILL.md</button>
+                    :title="selectedSkill.path"
+                    class="text-gray-500 hover:text-gray-300"
+                    x-text="selectedSkill.name || selectedSkill.id"></button>
             <template x-for="(d, i) in docStack" :key="i">
               <template x-if="d.doc && d.doc !== 'SKILL.md'">
                 <span class="flex items-center gap-2">
