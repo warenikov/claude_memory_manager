@@ -580,7 +580,9 @@
               </div>
             </div>
             <!-- Markdown body -->
-            <div class="prose text-sm leading-relaxed" x-html="renderMd(selectedMemory.body)"></div>
+            <div class="prose text-sm leading-relaxed"
+                 @click="handleMemoryLinkClick($event)"
+                 x-html="renderMd(selectedMemory.body)"></div>
           </div>
 
           <!-- EDIT mode -->
@@ -2016,6 +2018,31 @@
           } catch {
             this.notify('Failed to load file', true);
           }
+        },
+
+        // Intercept clicks inside the rendered memory body. MEMORY.md often
+        // contains relative .md links that point to sibling memory files —
+        // letting the browser navigate to them gives a 404. Resolve them
+        // against the current project's memory list and load via selectMemory.
+        async handleMemoryLinkClick(evt) {
+          const a = evt.target.closest && evt.target.closest('a');
+          if (!a) return;
+          const href = a.getAttribute('href') || '';
+          if (!href.endsWith('.md')) return;
+          if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return;   // absolute scheme
+          if (href.startsWith('//') || href.startsWith('/')) return;
+          evt.preventDefault();
+          const filename = href.replace(/^\.\//, '').split('#')[0].split('?')[0];
+          // Memory files live in a flat directory — strip any leading subdir,
+          // since the link target must be a file we already track.
+          const lastSep = filename.lastIndexOf('/');
+          const baseName = lastSep >= 0 ? filename.slice(lastSep + 1) : filename;
+          const target = this.memories.find(m => m.filename === baseName);
+          if (!target) {
+            this.notify(`File ${baseName} not in memory directory`, true);
+            return;
+          }
+          await this.selectMemory(target);
         },
 
         startEdit() {
