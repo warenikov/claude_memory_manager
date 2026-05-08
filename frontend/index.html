@@ -120,7 +120,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
         </svg>
       </button>
-      <div x-show="exp.system" >
+      <div x-show="exp.system">
         <button
           @click="selectGlobalSection()"
           :class="viewMode === 'global'
@@ -131,33 +131,27 @@
           <span class="text-xs opacity-70">⚙</span>
           <span class="text-xs">Global Config</span>
         </button>
+        <button
+          @click="selectActivitySection()"
+          :class="viewMode === 'activity'
+            ? 'bg-amber-950/60 text-amber-200 border-l-2 border-amber-500'
+            : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
+          class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
+        >
+          <span class="text-xs opacity-70">📊</span>
+          <span class="text-xs">Activity</span>
+        </button>
+        <button
+          @click="selectSkillsSection()"
+          :class="viewMode === 'skills'
+            ? 'bg-cyan-950/60 text-cyan-200 border-l-2 border-cyan-500'
+            : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
+          class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
+        >
+          <span class="text-xs opacity-70">🛠</span>
+          <span class="text-xs">Skills</span>
+        </button>
       </div>
-
-      <div class="mx-3 my-2 border-t border-gray-800"></div>
-
-      <!-- ── Activity (single button) ── -->
-      <button
-        @click="selectActivitySection()"
-        :class="viewMode === 'activity'
-          ? 'bg-amber-950/60 text-amber-200 border-l-2 border-amber-500'
-          : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
-        class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
-      >
-        <span class="text-xs opacity-70">📊</span>
-        <span class="text-xs">Activity</span>
-      </button>
-
-      <!-- ── Skills (single button) ── -->
-      <button
-        @click="selectSkillsSection()"
-        :class="viewMode === 'skills'
-          ? 'bg-cyan-950/60 text-cyan-200 border-l-2 border-cyan-500'
-          : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
-        class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
-      >
-        <span class="text-xs opacity-70">🛠</span>
-        <span class="text-xs">Skills</span>
-      </button>
 
       <div class="mx-3 my-2 border-t border-gray-800"></div>
 
@@ -1150,7 +1144,7 @@
     function app() {
       return {
         // ── state ──
-        exp: { system: true, projects: true },   // accordion sections
+        exp: { system: false, projects: false },   // accordion sections (collapsed by default)
         viewMode: 'projects',       // 'projects' | 'global' | 'activity'
         projects: [],
 
@@ -1246,6 +1240,7 @@
 
         async selectProject(p) {
           this.stopLive();
+          this.exp.projects = true;
           this.selectedProject = p;
           this.selectedMemory = null;
           this.selectedCfg = null;
@@ -1273,6 +1268,7 @@
 
         // ── activity section ──
         async selectActivitySection() {
+          this.exp.system = true;
           this.viewMode = 'activity';
           this.selectedProject = null;
           this.selectedMemory = null;
@@ -1292,6 +1288,7 @@
         // ── skills section ──
         async selectSkillsSection() {
           this.stopLive();
+          this.exp.system = true;
           this.viewMode = 'skills';
           this.selectedProject = null;
           this.selectedMemory = null;
@@ -1887,6 +1884,7 @@
         // ── global section ──
         async selectGlobalSection() {
           this.stopLive();
+          this.exp.system = true;
           this.viewMode = 'global';
           this.selectedProject = null;
           this.selectedMemory = null;
