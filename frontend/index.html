@@ -793,9 +793,10 @@
                   x-text="selectedSkill.skill_type === 'bundle' ? 'BUNDLE' : 'YAML'"></span>
             <span class="text-sm font-medium text-gray-300" x-text="selectedSkill.name || selectedSkill.id"></span>
             <span class="text-xs text-gray-600 tabular-nums flex-shrink-0"
-                  x-text="`~${fmtTok(selectedSkill.tokens)} tok`"></span>
+                  x-text="`~${fmtTok(viewedDoc?.tokens || selectedSkill.tokens)} tok`"></span>
             <span class="text-xs text-gray-600 font-mono truncate hidden md:block select-all"
-                  :title="selectedSkill.path" x-text="selectedSkill.path"></span>
+                  :title="viewedDoc?.path || selectedSkill.path"
+                  x-text="viewedDoc?.path || selectedSkill.path"></span>
             <div class="flex-1"></div>
 
             <!-- Preview / Edit tabs -->
@@ -810,13 +811,40 @@
             </div>
           </div>
 
+          <!-- Breadcrumb (bundle navigation) -->
+          <div x-show="selectedSkill.skill_type === 'bundle' && (docStack.length > 0 || viewedDoc?.doc !== 'SKILL.md')"
+               class="px-4 py-1.5 border-b border-gray-800/60 flex items-center gap-2 text-xs flex-shrink-0 bg-gray-950">
+            <button @click="backInDocStack()" :disabled="!docStack.length"
+                    :class="docStack.length ? 'text-cyan-400 hover:text-cyan-300' : 'text-gray-700 cursor-not-allowed'"
+                    class="font-mono">← back</button>
+            <span class="text-gray-700">|</span>
+            <button @click="resetToSkillRoot()"
+                    class="text-gray-500 hover:text-gray-300 font-mono">SKILL.md</button>
+            <template x-for="(d, i) in docStack" :key="i">
+              <template x-if="d.doc && d.doc !== 'SKILL.md'">
+                <span class="flex items-center gap-2">
+                  <span class="text-gray-700">›</span>
+                  <span class="text-gray-600 font-mono" x-text="d.doc"></span>
+                </span>
+              </template>
+            </template>
+            <template x-if="viewedDoc?.doc && viewedDoc.doc !== 'SKILL.md'">
+              <span class="flex items-center gap-2">
+                <span class="text-gray-700">›</span>
+                <span class="text-cyan-300 font-mono" x-text="viewedDoc.doc"></span>
+              </span>
+            </template>
+          </div>
+
           <!-- VIEW: bundle (markdown) -->
           <div x-show="skillMode === 'view' && selectedSkill.skill_type === 'bundle'"
                class="flex-1 overflow-y-auto p-5">
-            <div x-show="selectedSkill.description"
+            <div x-show="(viewedDoc?.doc === 'SKILL.md' || !viewedDoc?.doc) && selectedSkill.description"
                  class="mb-4 p-3 bg-gray-900 rounded-lg border border-gray-800 text-xs text-gray-400 leading-relaxed"
                  x-text="selectedSkill.description"></div>
-            <div class="prose text-sm leading-relaxed" x-html="renderMd(skillBody(selectedSkill.content))"></div>
+            <div class="prose text-sm leading-relaxed"
+                 @click="handleDocLinkClick($event)"
+                 x-html="renderMd(skillBody(viewedDoc?.content || ''))"></div>
           </div>
 
           <!-- VIEW: yaml -->
@@ -826,7 +854,7 @@
                  class="mb-3 p-3 bg-gray-900 rounded-lg border border-gray-800 text-xs text-gray-400 leading-relaxed"
                  x-text="selectedSkill.description"></div>
             <pre class="text-xs text-gray-300 font-mono leading-relaxed whitespace-pre-wrap"
-                 x-text="selectedSkill.content"></pre>
+                 x-text="viewedDoc?.content || selectedSkill.content"></pre>
           </div>
 
           <!-- EDIT -->
@@ -1080,6 +1108,10 @@
         skillSearch: '',
         skillMode: 'view',           // 'view' | 'edit'
         skillContent: '',
+        // bundle navigation: viewedDoc is what's actually shown (may be a sub-doc).
+        // For yaml skills viewedDoc.doc is empty.
+        viewedDoc: null,             // { doc, content, path, tokens }
+        docStack: [],                // history for back-navigation
 
         // live feed
         actMode: 'sessions',           // 'sessions' | 'live'
@@ -1216,14 +1248,81 @@
           try {
             const data = await fetch(`/api/skills/file?id=${enc(s.id)}`).then(r => r.json());
             this.selectedSkill = data;
+            // For bundle skills the root doc is SKILL.md; for yaml skills the
+            // doc is empty (we don't navigate inside yaml).
+            this.viewedDoc = {
+              doc: data.skill_type === 'bundle' ? 'SKILL.md' : '',
+              content: data.content || '',
+              path: data.path || '',
+              tokens: data.tokens || 0,
+            };
+            this.docStack = [];
             this.skillMode = 'view';
           } catch {
             this.notify('Failed to load skill', true);
           }
         },
 
+        // Click handler attached to the rendered prose container — intercepts
+        // relative .md links so they open inside the viewer instead of letting
+        // the browser navigate to a 404.
+        handleDocLinkClick(evt) {
+          const a = evt.target.closest && evt.target.closest('a');
+          if (!a) return;
+          const href = a.getAttribute('href') || '';
+          if (!href.endsWith('.md')) return;
+          if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return;   // absolute URL or scheme
+          if (href.startsWith('//') || href.startsWith('/')) return;
+          evt.preventDefault();
+          const doc = href.replace(/^\.\//, '').split('#')[0].split('?')[0];
+          this.openSkillDoc(doc);
+        },
+
+        async openSkillDoc(doc) {
+          if (!this.selectedSkill || this.selectedSkill.skill_type !== 'bundle') return;
+          try {
+            const data = await fetch(`/api/skills/doc?id=${enc(this.selectedSkill.id)}&doc=${enc(doc)}`).then(r => {
+              if (!r.ok) throw new Error('Doc not found');
+              return r.json();
+            });
+            // push current onto history before swapping
+            if (this.viewedDoc) this.docStack.push({ ...this.viewedDoc });
+            this.viewedDoc = data;
+            this.skillMode = 'view';
+          } catch {
+            this.notify(`Cannot open ${doc}`, true);
+          }
+        },
+
+        backInDocStack() {
+          if (!this.docStack.length) return;
+          this.viewedDoc = this.docStack.pop();
+          this.skillMode = 'view';
+        },
+
+        async resetToSkillRoot() {
+          // Jump back to the bundle root (SKILL.md) regardless of stack depth
+          if (!this.selectedSkill) return;
+          if (this.selectedSkill.skill_type !== 'bundle') {
+            this.viewedDoc = {
+              doc: '', content: this.selectedSkill.content || '',
+              path: this.selectedSkill.path || '', tokens: this.selectedSkill.tokens || 0,
+            };
+            this.docStack = [];
+            return;
+          }
+          try {
+            const data = await fetch(`/api/skills/doc?id=${enc(this.selectedSkill.id)}&doc=SKILL.md`).then(r => r.json());
+            this.viewedDoc = data;
+            this.docStack = [];
+            this.skillMode = 'view';
+          } catch {
+            this.notify('Cannot return to root', true);
+          }
+        },
+
         startSkillEdit() {
-          this.skillContent = this.selectedSkill?.content || '';
+          this.skillContent = this.viewedDoc?.content || this.selectedSkill?.content || '';
           this.skillMode = 'edit';
         },
 
@@ -1231,17 +1330,44 @@
           if (this.isSaving || !this.selectedSkill) return;
           this.isSaving = true;
           try {
-            const res = await fetch(`/api/skills/file?id=${enc(this.selectedSkill.id)}`, {
+            // If we're viewing a sub-doc (anything other than the skill root),
+            // save through the doc endpoint; otherwise save via /file (which
+            // also touches the bundle SKILL.md or the .skill.yaml).
+            const isSubDoc = this.selectedSkill.skill_type === 'bundle'
+                          && this.viewedDoc?.doc
+                          && this.viewedDoc.doc !== 'SKILL.md';
+            let url, body, isFileEndpoint;
+            if (isSubDoc) {
+              url = `/api/skills/doc?id=${enc(this.selectedSkill.id)}&doc=${enc(this.viewedDoc.doc)}`;
+              isFileEndpoint = false;
+            } else {
+              url = `/api/skills/file?id=${enc(this.selectedSkill.id)}`;
+              isFileEndpoint = true;
+            }
+            const res = await fetch(url, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ raw_content: this.skillContent }),
             });
             if (!res.ok) throw new Error((await res.json()).detail || 'Save failed');
             const saved = await res.json();
-            this.selectedSkill = saved;
-            const i = this.skills.findIndex(s => s.id === saved.id);
-            if (i >= 0) this.skills[i] = { id: saved.id, name: saved.name, description: saved.description,
-                                            skill_type: saved.skill_type, path: saved.path, tokens: saved.tokens };
+
+            if (isFileEndpoint) {
+              // SkillFile shape — refresh skill metadata
+              this.selectedSkill = saved;
+              this.viewedDoc = {
+                doc: saved.skill_type === 'bundle' ? 'SKILL.md' : '',
+                content: saved.content, path: saved.path, tokens: saved.tokens,
+              };
+              const i = this.skills.findIndex(s => s.id === saved.id);
+              if (i >= 0) this.skills[i] = {
+                id: saved.id, name: saved.name, description: saved.description,
+                skill_type: saved.skill_type, path: saved.path, tokens: saved.tokens,
+              };
+            } else {
+              // Bundle doc shape — only refresh viewedDoc
+              this.viewedDoc = saved;
+            }
             this.skillMode = 'view';
             this.notify('Saved');
           } catch (e) {

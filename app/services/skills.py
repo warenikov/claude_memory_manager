@@ -120,3 +120,47 @@ def write_skill(skill_id: str, content: str) -> SkillFile:
     shutil.copy2(path, bak)
     path.write_text(content, encoding="utf-8")
     return read_skill(skill_id)
+
+
+# ── Bundle docs (additional .md files inside a bundle skill directory) ──
+
+def _resolve_bundle_doc(skill_id: str, doc: str) -> Path:
+    """Resolve <skills_dir>/<skill_id>/<doc>, with strict safety checks."""
+    _validate_id(skill_id)
+    if not doc or "/" in doc or "\\" in doc or ".." in doc:
+        raise ValueError("Invalid doc name")
+    if not doc.endswith(".md"):
+        raise ValueError("Only .md docs are supported")
+    bundle_dir = SKILLS_DIR / skill_id
+    if not bundle_dir.is_dir():
+        raise FileNotFoundError(f"Skill bundle {skill_id!r} not found")
+    path = (bundle_dir / doc).resolve()
+    # ensure no traversal outside the bundle
+    if not str(path).startswith(str(bundle_dir.resolve())):
+        raise ValueError("Path traversal detected")
+    return path
+
+
+def read_skill_doc(skill_id: str, doc: str) -> dict:
+    path = _resolve_bundle_doc(skill_id, doc)
+    if not path.exists():
+        raise FileNotFoundError(f"Doc {doc!r} not in bundle {skill_id!r}")
+    content = path.read_text(encoding="utf-8")
+    return {
+        "id": skill_id,
+        "doc": doc,
+        "path": to_host_path(path),
+        "content": content,
+        "tokens": estimate_tokens(content),
+    }
+
+
+def write_skill_doc(skill_id: str, doc: str, content: str) -> dict:
+    if READ_ONLY:
+        raise PermissionError("Service is in read-only mode")
+    path = _resolve_bundle_doc(skill_id, doc)
+    if path.exists():
+        bak = path.parent / (path.name + ".bak")
+        shutil.copy2(path, bak)
+    path.write_text(content, encoding="utf-8")
+    return read_skill_doc(skill_id, doc)

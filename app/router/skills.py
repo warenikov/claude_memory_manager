@@ -33,3 +33,27 @@ def update_skill(update: RawUpdate, id: str = Query(...)):
         raise HTTPException(400, str(e))
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
+
+
+# ── Bundle internal .md docs (linked from SKILL.md) ──
+
+@router.get("/doc")
+def get_doc(id: str = Query(...), doc: str = Query(...)):
+    try:
+        return skills.read_skill_doc(id, doc)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.put("/doc")
+def update_doc(update: RawUpdate, id: str = Query(...), doc: str = Query(...)):
+    try:
+        return skills.write_skill_doc(id, doc, update.raw_content)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
