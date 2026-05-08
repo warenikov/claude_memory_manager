@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.models import RawUpdate, SkillFile, SkillMeta
+from app.models import RawUpdate, SkillCreate, SkillFile, SkillMeta
 from app.services import skills
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
@@ -21,6 +21,19 @@ def get_skill(id: str = Query(...)):
         raise HTTPException(400, str(e))
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
+
+
+@router.post("", response_model=SkillFile, status_code=201)
+def create_skill(data: SkillCreate):
+    try:
+        return skills.create_skill(data.id, data.skill_type, data.name,
+                                   data.description, data.body)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except FileExistsError as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.put("/file", response_model=SkillFile)

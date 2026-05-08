@@ -73,3 +73,11 @@ class SkillMeta(BaseModel):
 
 class SkillFile(SkillMeta):
     content: str = ""
+
+
+class SkillCreate(BaseModel):
+    id: str
+    skill_type: str          # "yaml" | "bundle"
+    name: str = ""
+    description: str = ""
+    body: str = ""

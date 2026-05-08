@@ -233,6 +233,11 @@
           @click="startNew()"
           class="text-xs text-violet-500 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium flex-shrink-0"
         >+ New</button>
+        <button
+          x-show="viewMode === 'skills' && !isReadOnly"
+          @click="startNewSkill()"
+          class="text-xs text-cyan-500 hover:text-cyan-300 flex items-center gap-1 transition-colors font-medium flex-shrink-0"
+        >+ New</button>
       </div>
 
       <!-- Global files list -->
@@ -463,7 +468,7 @@
     <div class="flex-1 flex flex-col overflow-hidden min-w-0">
 
       <!-- Empty state -->
-      <div x-show="!selectedMemory && !selectedCfg && !selectedSession && !selectedSkill && editMode !== 'new' && !(viewMode === 'activity' && actMode === 'live')"
+      <div x-show="!selectedMemory && !selectedCfg && !selectedSession && !selectedSkill && editMode !== 'new' && skillMode !== 'new' && !(viewMode === 'activity' && actMode === 'live')"
            class="flex-1 flex items-center justify-center text-gray-800">
         <div class="text-center">
           <div class="text-5xl mb-3 opacity-30"
@@ -783,8 +788,71 @@
         </div>
       </template>
 
+      <!-- ────────── New Skill form ────────── -->
+      <template x-if="viewMode === 'skills' && skillMode === 'new'">
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-gray-800 flex items-center gap-3 flex-shrink-0">
+            <span class="text-sm font-medium text-gray-200">New Skill</span>
+            <span class="text-xs text-gray-600 font-mono"
+                  x-text="newSkill.skill_type === 'yaml'
+                          ? `~/.claude/skills/${newSkill.id || '<id>'}.skill.yaml`
+                          : `~/.claude/skills/${newSkill.id || '<id>'}/SKILL.md`"></span>
+          </div>
+          <div class="flex-1 overflow-y-auto p-4">
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Type</label>
+                <select x-model="newSkill.skill_type"
+                        class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500">
+                  <option value="yaml">YAML — single .skill.yaml</option>
+                  <option value="bundle">Bundle — directory + SKILL.md</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">
+                  ID <span class="text-gray-700">a-z 0-9 - . _</span>
+                </label>
+                <input type="text" x-model="newSkill.id" placeholder="my-cool-skill"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-500 placeholder-gray-700" />
+              </div>
+              <div class="col-span-2">
+                <label class="text-xs text-gray-500 block mb-1">Display name</label>
+                <input type="text" x-model="newSkill.name" placeholder="My Cool Skill"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500 placeholder-gray-700" />
+              </div>
+              <div class="col-span-2">
+                <label class="text-xs text-gray-500 block mb-1">
+                  Description
+                  <span class="text-gray-700">— Claude использует это, чтобы решать когда подгружать скилл</span>
+                </label>
+                <input type="text" x-model="newSkill.description" placeholder="Что делает этот скилл и когда применять"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500 placeholder-gray-700" />
+              </div>
+            </div>
+            <label class="text-xs text-gray-500 block mb-1">
+              <span x-text="newSkill.skill_type === 'yaml' ? 'Prompt body — пойдёт в agent.prompt: |' : 'Markdown body — пойдёт в SKILL.md после frontmatter'"></span>
+              <span class="text-gray-700 ml-1">Ctrl+↵ to create</span>
+            </label>
+            <textarea
+              x-model="newSkill.body"
+              @keydown.ctrl.enter.prevent="createSkill()"
+              :placeholder="newSkill.skill_type === 'yaml' ? 'Ты — эксперт по…' : '# Заголовок\n\n## Раздел\n\nТекст…'"
+              class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-500 leading-relaxed"
+              style="height: 280px"
+            ></textarea>
+            <div class="flex gap-2 mt-3">
+              <button @click="createSkill()" :disabled="isSaving"
+                      class="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs rounded transition-colors font-medium"
+                      x-text="isSaving ? 'Creating…' : 'Create'"></button>
+              <button @click="cancelNewSkill()"
+                      class="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <!-- ────────── Skill viewer / editor ────────── -->
-      <template x-if="selectedSkill && viewMode === 'skills'">
+      <template x-if="selectedSkill && viewMode === 'skills' && skillMode !== 'new'">
         <div class="flex-1 flex flex-col overflow-hidden">
           <!-- Header -->
           <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-2.5 flex-shrink-0">
@@ -1108,12 +1176,13 @@
         isLoadingSkills: false,
         selectedSkill: null,
         skillSearch: '',
-        skillMode: 'view',           // 'view' | 'edit'
+        skillMode: 'view',           // 'view' | 'edit' | 'new'
         skillContent: '',
         // bundle navigation: viewedDoc is what's actually shown (may be a sub-doc).
         // For yaml skills viewedDoc.doc is empty.
         viewedDoc: null,             // { doc, content, path, tokens }
         docStack: [],                // history for back-navigation
+        newSkill: { id: '', skill_type: 'yaml', name: '', description: '', body: '' },
 
         // live feed
         actMode: 'sessions',           // 'sessions' | 'live'
@@ -1387,6 +1456,50 @@
             (s.id || '').toLowerCase().includes(q) ||
             (s.description || '').toLowerCase().includes(q)
           );
+        },
+
+        // ── new skill creation ──
+        startNewSkill() {
+          this.selectedSkill = null;
+          this.viewedDoc = null;
+          this.docStack = [];
+          this.skillMode = 'new';
+          this.newSkill = { id: '', skill_type: 'yaml', name: '', description: '', body: '' };
+        },
+
+        cancelNewSkill() {
+          this.skillMode = 'view';
+          this.newSkill = { id: '', skill_type: 'yaml', name: '', description: '', body: '' };
+        },
+
+        async createSkill() {
+          if (this.isSaving) return;
+          if (!this.newSkill.id || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$/.test(this.newSkill.id)) {
+            this.notify('ID must start with a letter/digit; allowed: a-z A-Z 0-9 . _ -', true);
+            return;
+          }
+          if (!['yaml', 'bundle'].includes(this.newSkill.skill_type)) {
+            this.notify('Pick a type', true);
+            return;
+          }
+          this.isSaving = true;
+          try {
+            const res = await fetch('/api/skills', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.newSkill),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Create failed');
+            const created = await res.json();
+            await this.loadSkills();
+            const found = this.skills.find(s => s.id === created.id);
+            if (found) await this.selectSkill(found);
+            this.notify('Skill created');
+          } catch (e) {
+            this.notify(e.message, true);
+          } finally {
+            this.isSaving = false;
+          }
         },
 
         // Strip frontmatter from SKILL.md body for Preview
