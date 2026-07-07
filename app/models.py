@@ -60,3 +60,24 @@ class SearchResult(BaseModel):
     name: str
     type: str
     snippet: str
+
+
+class SkillMeta(BaseModel):
+    id: str               # filename stem (yaml) or directory name (bundle)
+    name: str             # display name from frontmatter
+    description: str
+    skill_type: str       # "yaml" | "bundle"
+    path: str             # host path of the actual editable file
+    tokens: int = 0
+
+
+class SkillFile(SkillMeta):
+    content: str = ""
+
+
+class SkillCreate(BaseModel):
+    id: str
+    skill_type: str          # "yaml" | "bundle"
+    name: str = ""
+    description: str = ""
+    body: str = ""

@@ -16,6 +16,7 @@ def _default_claude_dir() -> Path:
 CLAUDE_DIR = Path(os.getenv("CLAUDE_DIR", _default_claude_dir()))
 READ_ONLY = os.getenv("READ_ONLY", "false").lower() == "true"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
+SKILLS_DIR = CLAUDE_DIR / "skills"
 
 # Path where host ~ is mounted inside Docker (for project config files)
 _host_home_env = os.getenv("HOST_HOME", "")

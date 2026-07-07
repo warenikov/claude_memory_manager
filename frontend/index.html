@@ -120,7 +120,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
         </svg>
       </button>
-      <div x-show="exp.system" >
+      <div x-show="exp.system">
         <button
           @click="selectGlobalSection()"
           :class="viewMode === 'global'
@@ -131,21 +131,27 @@
           <span class="text-xs opacity-70">⚙</span>
           <span class="text-xs">Global Config</span>
         </button>
+        <button
+          @click="selectActivitySection()"
+          :class="viewMode === 'activity'
+            ? 'bg-amber-950/60 text-amber-200 border-l-2 border-amber-500'
+            : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
+          class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
+        >
+          <span class="text-xs opacity-70">📊</span>
+          <span class="text-xs">Activity</span>
+        </button>
+        <button
+          @click="selectSkillsSection()"
+          :class="viewMode === 'skills'
+            ? 'bg-cyan-950/60 text-cyan-200 border-l-2 border-cyan-500'
+            : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
+          class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
+        >
+          <span class="text-xs opacity-70">🛠</span>
+          <span class="text-xs">Skills</span>
+        </button>
       </div>
-
-      <div class="mx-3 my-2 border-t border-gray-800"></div>
-
-      <!-- ── Activity (single button) ── -->
-      <button
-        @click="selectActivitySection()"
-        :class="viewMode === 'activity'
-          ? 'bg-amber-950/60 text-amber-200 border-l-2 border-amber-500'
-          : 'text-gray-500 hover:bg-gray-800/70 hover:text-gray-300 border-l-2 border-transparent'"
-        class="w-full flex items-center gap-2 px-3 py-1.5 transition-colors"
-      >
-        <span class="text-xs opacity-70">📊</span>
-        <span class="text-xs">Activity</span>
-      </button>
 
       <div class="mx-3 my-2 border-t border-gray-800"></div>
 
@@ -189,6 +195,7 @@
         <div class="flex items-center gap-2 min-w-0">
           <span x-show="viewMode !== 'activity'" class="text-xs font-semibold text-gray-600 uppercase tracking-wider truncate"
                 x-text="viewMode === 'global' ? 'Global Config'
+                      : viewMode === 'skills' ? 'Skills'
                       : (selectedProject ? 'Memory Files' : 'Select a project')"></span>
 
           <!-- Activity sub-tabs -->
@@ -212,11 +219,18 @@
                 class="text-xs text-gray-700 tabular-nums flex-shrink-0"
                 title="Sessions matching current Project/Days filter"
                 x-text="`${sessions.length} sessions`"></span>
+          <span x-show="viewMode === 'skills'" class="text-xs text-gray-700 tabular-nums flex-shrink-0"
+                x-text="`${visibleSkills.length} / ${skills.length}`"></span>
         </div>
         <button
           x-show="viewMode === 'projects' && selectedProject && !isReadOnly"
           @click="startNew()"
           class="text-xs text-violet-500 hover:text-violet-300 flex items-center gap-1 transition-colors font-medium flex-shrink-0"
+        >+ New</button>
+        <button
+          x-show="viewMode === 'skills' && !isReadOnly"
+          @click="startNewSkill()"
+          class="text-xs text-cyan-500 hover:text-cyan-300 flex items-center gap-1 transition-colors font-medium flex-shrink-0"
         >+ New</button>
       </div>
 
@@ -353,6 +367,38 @@
         </div>
       </div>
 
+      <!-- Skills list -->
+      <div x-show="viewMode === 'skills'" class="flex-1 flex flex-col overflow-hidden">
+        <div class="px-3 py-2 border-b border-gray-800/60 flex-shrink-0">
+          <input type="text" x-model="skillSearch"
+                 placeholder="Search by name or description…"
+                 class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-cyan-500" />
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          <div x-show="isLoadingSkills" class="px-3 py-3 text-xs text-gray-600">Loading…</div>
+          <div x-show="!isLoadingSkills && visibleSkills.length === 0"
+               class="px-3 py-3 text-xs text-gray-700">No skills</div>
+          <template x-for="s in visibleSkills" :key="s.id">
+            <button
+              @click="selectSkill(s)"
+              :class="selectedSkill?.id === s.id
+                ? 'bg-gray-800 border-l-2 border-cyan-500'
+                : 'border-l-2 border-transparent hover:bg-gray-900'"
+              class="w-full px-3 py-2 text-left transition-colors block">
+              <div class="flex items-center gap-1.5 mb-0.5">
+                <span class="text-xs px-1.5 py-0.5 rounded font-mono uppercase flex-shrink-0 leading-none"
+                      :class="s.skill_type === 'bundle' ? 'bg-cyan-900/60 text-cyan-300' : 'bg-indigo-900/60 text-indigo-300'"
+                      x-text="s.skill_type === 'bundle' ? 'BNDL' : 'YAML'"></span>
+                <span class="text-xs text-gray-300 truncate flex-1 leading-snug" x-text="s.name || s.id"></span>
+                <span class="text-xs text-gray-600 tabular-nums flex-shrink-0" x-text="`~${fmtTok(s.tokens)}`"></span>
+              </div>
+              <div x-show="s.description" class="text-xs text-gray-600 leading-snug line-clamp-2"
+                   x-text="s.description"></div>
+            </button>
+          </template>
+        </div>
+      </div>
+
       <!-- Memory + Config files list (projects mode) -->
       <div x-show="viewMode === 'projects'" class="flex-1 overflow-y-auto">
         <div x-show="isLoadingMemories" class="px-3 py-3 text-xs text-gray-600">Loading…</div>
@@ -416,13 +462,15 @@
     <div class="flex-1 flex flex-col overflow-hidden min-w-0">
 
       <!-- Empty state -->
-      <div x-show="!selectedMemory && !selectedCfg && !selectedSession && editMode !== 'new' && !(viewMode === 'activity' && actMode === 'live')"
+      <div x-show="!selectedMemory && !selectedCfg && !selectedSession && !selectedSkill && editMode !== 'new' && skillMode !== 'new' && !(viewMode === 'activity' && actMode === 'live')"
            class="flex-1 flex items-center justify-center text-gray-800">
         <div class="text-center">
           <div class="text-5xl mb-3 opacity-30"
-               x-text="viewMode === 'activity' ? '📊' : '🧠'"></div>
+               x-text="viewMode === 'activity' ? '📊' : viewMode === 'skills' ? '🛠' : '🧠'"></div>
           <div class="text-sm text-gray-700"
-               x-text="viewMode === 'activity' ? 'Select a session to inspect' : 'Select a file to view'"></div>
+               x-text="viewMode === 'activity' ? 'Select a session to inspect'
+                     : viewMode === 'skills' ? 'Select a skill to view'
+                     : 'Select a file to view'"></div>
         </div>
       </div>
 
@@ -532,7 +580,9 @@
               </div>
             </div>
             <!-- Markdown body -->
-            <div class="prose text-sm leading-relaxed" x-html="renderMd(selectedMemory.body)"></div>
+            <div class="prose text-sm leading-relaxed"
+                 @click="handleMemoryLinkClick($event)"
+                 x-html="renderMd(selectedMemory.body)"></div>
           </div>
 
           <!-- EDIT mode -->
@@ -730,6 +780,167 @@
                 <span class="text-xs text-gray-700 truncate min-w-0" :title="e.file" x-text="dirPart(e.file)"></span>
               </div>
             </template>
+          </div>
+        </div>
+      </template>
+
+      <!-- ────────── New Skill form ────────── -->
+      <template x-if="viewMode === 'skills' && skillMode === 'new'">
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-gray-800 flex items-center gap-3 flex-shrink-0">
+            <span class="text-sm font-medium text-gray-200">New Skill</span>
+            <span class="text-xs text-gray-600 font-mono"
+                  x-text="newSkill.skill_type === 'yaml'
+                          ? `~/.claude/skills/${newSkill.id || '<id>'}.skill.yaml`
+                          : `~/.claude/skills/${newSkill.id || '<id>'}/SKILL.md`"></span>
+          </div>
+          <div class="flex-1 overflow-y-auto p-4">
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">Type</label>
+                <select x-model="newSkill.skill_type"
+                        class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500">
+                  <option value="yaml">YAML — single .skill.yaml</option>
+                  <option value="bundle">Bundle — directory + SKILL.md</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 block mb-1">
+                  ID <span class="text-gray-700">a-z 0-9 - . _</span>
+                </label>
+                <input type="text" x-model="newSkill.id" placeholder="my-cool-skill"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-500 placeholder-gray-700" />
+              </div>
+              <div class="col-span-2">
+                <label class="text-xs text-gray-500 block mb-1">Display name</label>
+                <input type="text" x-model="newSkill.name" placeholder="My Cool Skill"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500 placeholder-gray-700" />
+              </div>
+              <div class="col-span-2">
+                <label class="text-xs text-gray-500 block mb-1">
+                  Description
+                  <span class="text-gray-700">— Claude использует это, чтобы решать когда подгружать скилл</span>
+                </label>
+                <input type="text" x-model="newSkill.description" placeholder="Что делает этот скилл и когда применять"
+                       class="w-full bg-gray-800 border border-gray-700 rounded px-2.5 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-cyan-500 placeholder-gray-700" />
+              </div>
+            </div>
+            <label class="text-xs text-gray-500 block mb-1">
+              <span x-text="newSkill.skill_type === 'yaml' ? 'Prompt body — пойдёт в agent.prompt: |' : 'Markdown body — пойдёт в SKILL.md после frontmatter'"></span>
+              <span class="text-gray-700 ml-1">Ctrl+↵ to create</span>
+            </label>
+            <textarea
+              x-model="newSkill.body"
+              @keydown.ctrl.enter.prevent="createSkill()"
+              :placeholder="newSkill.skill_type === 'yaml' ? 'Ты — эксперт по…' : '# Заголовок\n\n## Раздел\n\nТекст…'"
+              class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-500 leading-relaxed"
+              style="height: 280px"
+            ></textarea>
+            <div class="flex gap-2 mt-3">
+              <button @click="createSkill()" :disabled="isSaving"
+                      class="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs rounded transition-colors font-medium"
+                      x-text="isSaving ? 'Creating…' : 'Create'"></button>
+              <button @click="cancelNewSkill()"
+                      class="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- ────────── Skill viewer / editor ────────── -->
+      <template x-if="selectedSkill && viewMode === 'skills' && skillMode !== 'new'">
+        <div class="flex-1 flex flex-col overflow-hidden">
+          <!-- Header -->
+          <div class="px-4 py-2 border-b border-gray-800 flex items-center gap-2.5 flex-shrink-0">
+            <span class="text-xs px-1.5 py-0.5 rounded font-mono uppercase"
+                  :class="selectedSkill.skill_type === 'bundle' ? 'bg-cyan-900/60 text-cyan-300' : 'bg-indigo-900/60 text-indigo-300'"
+                  x-text="selectedSkill.skill_type === 'bundle' ? 'BUNDLE' : 'YAML'"></span>
+            <span class="text-sm font-medium text-gray-300" x-text="selectedSkill.name || selectedSkill.id"></span>
+            <span class="text-xs text-gray-600 tabular-nums flex-shrink-0"
+                  x-text="`~${fmtTok(viewedDoc?.tokens || selectedSkill.tokens)} tok`"></span>
+            <span class="text-xs text-gray-600 font-mono truncate hidden md:block select-all"
+                  :title="viewedDoc?.path || selectedSkill.path"
+                  x-text="viewedDoc?.path || selectedSkill.path"></span>
+            <div class="flex-1"></div>
+
+            <!-- Preview / Edit tabs -->
+            <div class="flex items-center bg-gray-800 rounded p-0.5 gap-0.5">
+              <button @click="skillMode = 'view'"
+                      :class="skillMode === 'view' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Preview</button>
+              <button x-show="!isReadOnly"
+                      @click="startSkillEdit()"
+                      :class="skillMode === 'edit' ? 'bg-gray-700 text-gray-100' : 'text-gray-500 hover:text-gray-300'"
+                      class="px-2.5 py-1 text-xs rounded transition-colors">Edit</button>
+            </div>
+          </div>
+
+          <!-- Breadcrumb (bundle navigation) -->
+          <div x-show="selectedSkill.skill_type === 'bundle' && (docStack.length > 0 || viewedDoc?.doc !== 'SKILL.md')"
+               class="px-4 py-1.5 border-b border-gray-800/60 flex items-center gap-2 text-xs flex-shrink-0 bg-gray-950">
+            <button @click="backInDocStack()" :disabled="!docStack.length"
+                    :class="docStack.length ? 'text-cyan-400 hover:text-cyan-300' : 'text-gray-700 cursor-not-allowed'"
+                    class="font-mono">← back</button>
+            <span class="text-gray-700">|</span>
+            <button @click="resetToSkillRoot()"
+                    :title="selectedSkill.path"
+                    class="text-gray-500 hover:text-gray-300"
+                    x-text="selectedSkill.name || selectedSkill.id"></button>
+            <template x-for="(d, i) in docStack" :key="i">
+              <template x-if="d.doc && d.doc !== 'SKILL.md'">
+                <span class="flex items-center gap-2">
+                  <span class="text-gray-700">›</span>
+                  <span class="text-gray-600 font-mono" x-text="d.doc"></span>
+                </span>
+              </template>
+            </template>
+            <template x-if="viewedDoc?.doc && viewedDoc.doc !== 'SKILL.md'">
+              <span class="flex items-center gap-2">
+                <span class="text-gray-700">›</span>
+                <span class="text-cyan-300 font-mono" x-text="viewedDoc.doc"></span>
+              </span>
+            </template>
+          </div>
+
+          <!-- VIEW: bundle (markdown) -->
+          <div x-show="skillMode === 'view' && selectedSkill.skill_type === 'bundle'"
+               class="flex-1 overflow-y-auto p-5">
+            <div x-show="(viewedDoc?.doc === 'SKILL.md' || !viewedDoc?.doc) && selectedSkill.description"
+                 class="mb-4 p-3 bg-gray-900 rounded-lg border border-gray-800 text-xs text-gray-400 leading-relaxed"
+                 x-text="selectedSkill.description"></div>
+            <div class="prose text-sm leading-relaxed"
+                 @click="handleDocLinkClick($event)"
+                 x-html="renderMd(skillBody(viewedDoc?.content || ''))"></div>
+          </div>
+
+          <!-- VIEW: yaml -->
+          <div x-show="skillMode === 'view' && selectedSkill.skill_type === 'yaml'"
+               class="flex-1 overflow-y-auto p-4">
+            <div x-show="selectedSkill.description"
+                 class="mb-3 p-3 bg-gray-900 rounded-lg border border-gray-800 text-xs text-gray-400 leading-relaxed"
+                 x-text="selectedSkill.description"></div>
+            <pre class="text-xs text-gray-300 font-mono leading-relaxed whitespace-pre-wrap"
+                 x-text="viewedDoc?.content || selectedSkill.content"></pre>
+          </div>
+
+          <!-- EDIT -->
+          <div x-show="skillMode === 'edit'" class="flex-1 flex flex-col overflow-hidden p-4">
+            <label class="text-xs text-gray-500 block mb-1 flex-shrink-0">
+              <span x-text="selectedSkill.skill_type === 'bundle' ? 'SKILL.md (markdown + frontmatter)' : 'YAML'"></span>
+              <span class="text-gray-700 ml-1">Ctrl+S to save</span>
+            </label>
+            <textarea
+              x-model="skillContent"
+              @keydown.ctrl.s.prevent="saveSkill()"
+              class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-2.5 text-xs text-gray-200 font-mono focus:outline-none focus:border-cyan-500 leading-relaxed"
+            ></textarea>
+            <div class="flex gap-2 mt-3 flex-shrink-0">
+              <button @click="saveSkill()" :disabled="isSaving"
+                      class="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs rounded transition-colors font-medium"
+                      x-text="isSaving ? 'Saving…' : 'Save'"></button>
+              <button @click="skillMode = 'view'"
+                      class="px-4 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors">Cancel</button>
+            </div>
           </div>
         </div>
       </template>
@@ -935,7 +1146,7 @@
     function app() {
       return {
         // ── state ──
-        exp: { system: true, projects: true },   // accordion sections
+        exp: { system: false, projects: false },   // accordion sections (collapsed by default)
         viewMode: 'projects',       // 'projects' | 'global' | 'activity'
         projects: [],
 
@@ -955,6 +1166,19 @@
         // sequence tab
         seqFilter: '',
         seqTools: { Read: true, Edit: true, Write: true, MultiEdit: true, NotebookEdit: true },
+
+        // skills
+        skills: [],
+        isLoadingSkills: false,
+        selectedSkill: null,
+        skillSearch: '',
+        skillMode: 'view',           // 'view' | 'edit' | 'new'
+        skillContent: '',
+        // bundle navigation: viewedDoc is what's actually shown (may be a sub-doc).
+        // For yaml skills viewedDoc.doc is empty.
+        viewedDoc: null,             // { doc, content, path, tokens }
+        docStack: [],                // history for back-navigation
+        newSkill: { id: '', skill_type: 'yaml', name: '', description: '', body: '' },
 
         // live feed
         actMode: 'sessions',           // 'sessions' | 'live'
@@ -1018,10 +1242,12 @@
 
         async selectProject(p) {
           this.stopLive();
+          this.exp.projects = true;
           this.selectedProject = p;
           this.selectedMemory = null;
           this.selectedCfg = null;
           this.selectedSession = null;
+          this.selectedSkill = null;
           this.destroyChart();
           this.destroyCy();
           this.viewMode = 'projects';
@@ -1044,10 +1270,12 @@
 
         // ── activity section ──
         async selectActivitySection() {
+          this.exp.system = true;
           this.viewMode = 'activity';
           this.selectedProject = null;
           this.selectedMemory = null;
           this.selectedCfg = null;
+          this.selectedSkill = null;
           this.editMode = 'view';
           this.cfgMode = 'view';
           this.destroyChart();
@@ -1057,6 +1285,231 @@
           } else {
             await this.loadSessions();
           }
+        },
+
+        // ── skills section ──
+        async selectSkillsSection() {
+          this.stopLive();
+          this.exp.system = true;
+          this.viewMode = 'skills';
+          this.selectedProject = null;
+          this.selectedMemory = null;
+          this.selectedCfg = null;
+          this.selectedSession = null;
+          this.editMode = 'view';
+          this.cfgMode = 'view';
+          this.destroyChart();
+          this.destroyCy();
+          if (this.skills.length === 0) await this.loadSkills();
+        },
+
+        async loadSkills() {
+          this.isLoadingSkills = true;
+          try {
+            this.skills = await fetch('/api/skills').then(r => r.json());
+          } catch {
+            this.notify('Failed to load skills', true);
+          } finally {
+            this.isLoadingSkills = false;
+          }
+        },
+
+        async selectSkill(s) {
+          try {
+            const data = await fetch(`/api/skills/file?id=${enc(s.id)}`).then(r => r.json());
+            this.selectedSkill = data;
+            // For bundle skills the root doc is SKILL.md; for yaml skills the
+            // doc is empty (we don't navigate inside yaml).
+            this.viewedDoc = {
+              doc: data.skill_type === 'bundle' ? 'SKILL.md' : '',
+              content: data.content || '',
+              path: data.path || '',
+              tokens: data.tokens || 0,
+            };
+            this.docStack = [];
+            this.skillMode = 'view';
+          } catch {
+            this.notify('Failed to load skill', true);
+          }
+        },
+
+        // Click handler attached to the rendered prose container — intercepts
+        // relative .md links so they open inside the viewer instead of letting
+        // the browser navigate to a 404.
+        handleDocLinkClick(evt) {
+          const a = evt.target.closest && evt.target.closest('a');
+          if (!a) return;
+          const href = a.getAttribute('href') || '';
+          if (!href.endsWith('.md')) return;
+          if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return;   // absolute URL or scheme
+          if (href.startsWith('//') || href.startsWith('/')) return;
+          evt.preventDefault();
+          const doc = href.replace(/^\.\//, '').split('#')[0].split('?')[0];
+          this.openSkillDoc(doc);
+        },
+
+        async openSkillDoc(doc) {
+          if (!this.selectedSkill || this.selectedSkill.skill_type !== 'bundle') return;
+          try {
+            const data = await fetch(`/api/skills/doc?id=${enc(this.selectedSkill.id)}&doc=${enc(doc)}`).then(r => {
+              if (!r.ok) throw new Error('Doc not found');
+              return r.json();
+            });
+            // push current onto history before swapping
+            if (this.viewedDoc) this.docStack.push({ ...this.viewedDoc });
+            this.viewedDoc = data;
+            this.skillMode = 'view';
+          } catch {
+            this.notify(`Cannot open ${doc}`, true);
+          }
+        },
+
+        backInDocStack() {
+          if (!this.docStack.length) return;
+          this.viewedDoc = this.docStack.pop();
+          this.skillMode = 'view';
+        },
+
+        async resetToSkillRoot() {
+          // Jump back to the bundle root (SKILL.md) regardless of stack depth
+          if (!this.selectedSkill) return;
+          if (this.selectedSkill.skill_type !== 'bundle') {
+            this.viewedDoc = {
+              doc: '', content: this.selectedSkill.content || '',
+              path: this.selectedSkill.path || '', tokens: this.selectedSkill.tokens || 0,
+            };
+            this.docStack = [];
+            return;
+          }
+          try {
+            const data = await fetch(`/api/skills/doc?id=${enc(this.selectedSkill.id)}&doc=SKILL.md`).then(r => r.json());
+            this.viewedDoc = data;
+            this.docStack = [];
+            this.skillMode = 'view';
+          } catch {
+            this.notify('Cannot return to root', true);
+          }
+        },
+
+        startSkillEdit() {
+          this.skillContent = this.viewedDoc?.content || this.selectedSkill?.content || '';
+          this.skillMode = 'edit';
+        },
+
+        async saveSkill() {
+          if (this.isSaving || !this.selectedSkill) return;
+          this.isSaving = true;
+          try {
+            // If we're viewing a sub-doc (anything other than the skill root),
+            // save through the doc endpoint; otherwise save via /file (which
+            // also touches the bundle SKILL.md or the .skill.yaml).
+            const isSubDoc = this.selectedSkill.skill_type === 'bundle'
+                          && this.viewedDoc?.doc
+                          && this.viewedDoc.doc !== 'SKILL.md';
+            let url, body, isFileEndpoint;
+            if (isSubDoc) {
+              url = `/api/skills/doc?id=${enc(this.selectedSkill.id)}&doc=${enc(this.viewedDoc.doc)}`;
+              isFileEndpoint = false;
+            } else {
+              url = `/api/skills/file?id=${enc(this.selectedSkill.id)}`;
+              isFileEndpoint = true;
+            }
+            const res = await fetch(url, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ raw_content: this.skillContent }),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Save failed');
+            const saved = await res.json();
+
+            if (isFileEndpoint) {
+              // SkillFile shape — refresh skill metadata
+              this.selectedSkill = saved;
+              this.viewedDoc = {
+                doc: saved.skill_type === 'bundle' ? 'SKILL.md' : '',
+                content: saved.content, path: saved.path, tokens: saved.tokens,
+              };
+              const i = this.skills.findIndex(s => s.id === saved.id);
+              if (i >= 0) this.skills[i] = {
+                id: saved.id, name: saved.name, description: saved.description,
+                skill_type: saved.skill_type, path: saved.path, tokens: saved.tokens,
+              };
+            } else {
+              // Bundle doc shape — only refresh viewedDoc
+              this.viewedDoc = saved;
+            }
+            this.skillMode = 'view';
+            this.notify('Saved');
+          } catch (e) {
+            this.notify(e.message, true);
+          } finally {
+            this.isSaving = false;
+          }
+        },
+
+        get visibleSkills() {
+          const q = (this.skillSearch || '').trim().toLowerCase();
+          if (!q) return this.skills;
+          return this.skills.filter(s =>
+            (s.name || '').toLowerCase().includes(q) ||
+            (s.id || '').toLowerCase().includes(q) ||
+            (s.description || '').toLowerCase().includes(q)
+          );
+        },
+
+        // ── new skill creation ──
+        startNewSkill() {
+          this.selectedSkill = null;
+          this.viewedDoc = null;
+          this.docStack = [];
+          this.skillMode = 'new';
+          this.newSkill = { id: '', skill_type: 'yaml', name: '', description: '', body: '' };
+        },
+
+        cancelNewSkill() {
+          this.skillMode = 'view';
+          this.newSkill = { id: '', skill_type: 'yaml', name: '', description: '', body: '' };
+        },
+
+        async createSkill() {
+          if (this.isSaving) return;
+          if (!this.newSkill.id || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$/.test(this.newSkill.id)) {
+            this.notify('ID must start with a letter/digit; allowed: a-z A-Z 0-9 . _ -', true);
+            return;
+          }
+          if (!['yaml', 'bundle'].includes(this.newSkill.skill_type)) {
+            this.notify('Pick a type', true);
+            return;
+          }
+          this.isSaving = true;
+          try {
+            const res = await fetch('/api/skills', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.newSkill),
+            });
+            if (!res.ok) throw new Error((await res.json()).detail || 'Create failed');
+            const created = await res.json();
+            await this.loadSkills();
+            const found = this.skills.find(s => s.id === created.id);
+            if (found) await this.selectSkill(found);
+            this.notify('Skill created');
+          } catch (e) {
+            this.notify(e.message, true);
+          } finally {
+            this.isSaving = false;
+          }
+        },
+
+        // Strip frontmatter from SKILL.md body for Preview
+        skillBody(content) {
+          if (!content || !content.startsWith('---')) return content || '';
+          const end = content.indexOf('\n---', 4);
+          if (end < 0) return content;
+          // skip "\n---" + optional trailing newline
+          let i = end + 4;
+          if (content[i] === '\n') i++;
+          return content.slice(i);
         },
 
         setActMode(mode) {
@@ -1433,11 +1886,13 @@
         // ── global section ──
         async selectGlobalSection() {
           this.stopLive();
+          this.exp.system = true;
           this.viewMode = 'global';
           this.selectedProject = null;
           this.selectedMemory = null;
           this.selectedCfg = null;
           this.selectedSession = null;
+          this.selectedSkill = null;
           this.destroyChart();
           this.destroyCy();
           this.editMode = 'view';
@@ -1563,6 +2018,31 @@
           } catch {
             this.notify('Failed to load file', true);
           }
+        },
+
+        // Intercept clicks inside the rendered memory body. MEMORY.md often
+        // contains relative .md links that point to sibling memory files —
+        // letting the browser navigate to them gives a 404. Resolve them
+        // against the current project's memory list and load via selectMemory.
+        async handleMemoryLinkClick(evt) {
+          const a = evt.target.closest && evt.target.closest('a');
+          if (!a) return;
+          const href = a.getAttribute('href') || '';
+          if (!href.endsWith('.md')) return;
+          if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return;   // absolute scheme
+          if (href.startsWith('//') || href.startsWith('/')) return;
+          evt.preventDefault();
+          const filename = href.replace(/^\.\//, '').split('#')[0].split('?')[0];
+          // Memory files live in a flat directory — strip any leading subdir,
+          // since the link target must be a file we already track.
+          const lastSep = filename.lastIndexOf('/');
+          const baseName = lastSep >= 0 ? filename.slice(lastSep + 1) : filename;
+          const target = this.memories.find(m => m.filename === baseName);
+          if (!target) {
+            this.notify(`File ${baseName} not in memory directory`, true);
+            return;
+          }
+          await this.selectMemory(target);
         },
 
         startEdit() {

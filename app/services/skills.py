@@ -1,0 +1,228 @@
+import re
+import shutil
+from pathlib import Path
+from typing import List, Tuple
+
+import yaml
+
+from app.config import READ_ONLY, SKILLS_DIR
+from app.models import SkillFile, SkillMeta
+from app.services.fs import estimate_tokens, to_host_path
+
+_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$")
+
+
+# ── YAML literal-block scalar helper for clean prompt: |\n... output ─────────
+
+class _LiteralStr(str):
+    pass
+
+
+def _literal_repr(dumper, data):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+
+
+yaml.SafeDumper.add_representer(_LiteralStr, _literal_repr)
+
+
+def _iter_skills() -> List[Tuple[str, Path, str]]:
+    """Yield (id, file_to_edit, type) for every skill on disk.
+
+    type = "yaml"   for `<id>.skill.yaml` (single-file)
+    type = "bundle" for `<id>/SKILL.md`   (bundle directory)
+    """
+    if not SKILLS_DIR.exists():
+        return []
+    out: List[Tuple[str, Path, str]] = []
+    for entry in sorted(SKILLS_DIR.iterdir()):
+        try:
+            if entry.is_file() and entry.name.endswith(".skill.yaml"):
+                sid = entry.name[: -len(".skill.yaml")]
+                out.append((sid, entry, "yaml"))
+            elif entry.is_dir():
+                md = entry / "SKILL.md"
+                if md.exists():
+                    out.append((entry.name, md, "bundle"))
+        except OSError:
+            continue
+    return out
+
+
+def _parse_meta(content: str, skill_type: str) -> dict:
+    """Pull `name` + `description` out of skill content."""
+    if skill_type == "yaml":
+        try:
+            data = yaml.safe_load(content) or {}
+        except Exception:
+            return {"name": "", "description": ""}
+        if not isinstance(data, dict):
+            return {"name": "", "description": ""}
+        return {
+            "name": str(data.get("name") or ""),
+            "description": str(data.get("description") or ""),
+        }
+
+    # bundle: SKILL.md with `---\n<yaml>\n---` frontmatter
+    if not content.startswith("---"):
+        return {"name": "", "description": ""}
+    end = content.find("\n---", 4)
+    if end < 0:
+        return {"name": "", "description": ""}
+    fm = content[3:end].strip()
+    try:
+        data = yaml.safe_load(fm) or {}
+    except Exception:
+        return {"name": "", "description": ""}
+    if not isinstance(data, dict):
+        return {"name": "", "description": ""}
+    return {
+        "name": str(data.get("name") or ""),
+        "description": str(data.get("description") or ""),
+    }
+
+
+def list_skills() -> List[SkillMeta]:
+    result: List[SkillMeta] = []
+    for sid, path, stype in _iter_skills():
+        try:
+            content = path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        meta = _parse_meta(content, stype)
+        result.append(SkillMeta(
+            id=sid,
+            name=meta["name"] or sid,
+            description=meta["description"],
+            skill_type=stype,
+            path=to_host_path(path),
+            tokens=estimate_tokens(content),
+        ))
+    return result
+
+
+def _validate_id(skill_id: str) -> None:
+    if not skill_id or "/" in skill_id or "\\" in skill_id or ".." in skill_id:
+        raise ValueError("Invalid skill id")
+
+
+def _resolve(skill_id: str) -> Tuple[Path, str]:
+    _validate_id(skill_id)
+    for sid, path, stype in _iter_skills():
+        if sid == skill_id:
+            return path, stype
+    raise FileNotFoundError(f"Skill {skill_id!r} not found")
+
+
+def read_skill(skill_id: str) -> SkillFile:
+    path, stype = _resolve(skill_id)
+    content = path.read_text(encoding="utf-8")
+    meta = _parse_meta(content, stype)
+    return SkillFile(
+        id=skill_id,
+        name=meta["name"] or skill_id,
+        description=meta["description"],
+        skill_type=stype,
+        path=to_host_path(path),
+        tokens=estimate_tokens(content),
+        content=content,
+    )
+
+
+def write_skill(skill_id: str, content: str) -> SkillFile:
+    if READ_ONLY:
+        raise PermissionError("Service is in read-only mode")
+    path, _ = _resolve(skill_id)
+    bak = path.parent / (path.name + ".bak")
+    shutil.copy2(path, bak)
+    path.write_text(content, encoding="utf-8")
+    return read_skill(skill_id)
+
+
+# ── Bundle docs (additional .md files inside a bundle skill directory) ──
+
+def _resolve_bundle_doc(skill_id: str, doc: str) -> Path:
+    """Resolve <skills_dir>/<skill_id>/<doc>, with strict safety checks."""
+    _validate_id(skill_id)
+    if not doc or "/" in doc or "\\" in doc or ".." in doc:
+        raise ValueError("Invalid doc name")
+    if not doc.endswith(".md"):
+        raise ValueError("Only .md docs are supported")
+    bundle_dir = SKILLS_DIR / skill_id
+    if not bundle_dir.is_dir():
+        raise FileNotFoundError(f"Skill bundle {skill_id!r} not found")
+    path = (bundle_dir / doc).resolve()
+    # ensure no traversal outside the bundle
+    if not str(path).startswith(str(bundle_dir.resolve())):
+        raise ValueError("Path traversal detected")
+    return path
+
+
+def read_skill_doc(skill_id: str, doc: str) -> dict:
+    path = _resolve_bundle_doc(skill_id, doc)
+    if not path.exists():
+        raise FileNotFoundError(f"Doc {doc!r} not in bundle {skill_id!r}")
+    content = path.read_text(encoding="utf-8")
+    return {
+        "id": skill_id,
+        "doc": doc,
+        "path": to_host_path(path),
+        "content": content,
+        "tokens": estimate_tokens(content),
+    }
+
+
+def _id_exists(skill_id: str) -> bool:
+    return (SKILLS_DIR / f"{skill_id}.skill.yaml").exists() or (SKILLS_DIR / skill_id).exists()
+
+
+def create_skill(skill_id: str, skill_type: str, name: str = "",
+                 description: str = "", body: str = "") -> SkillFile:
+    if READ_ONLY:
+        raise PermissionError("Service is in read-only mode")
+    if not _ID_RE.match(skill_id or ""):
+        raise ValueError("ID must start with a letter or digit; allowed chars: a-z A-Z 0-9 . _ -")
+    if skill_type not in ("yaml", "bundle"):
+        raise ValueError("skill_type must be 'yaml' or 'bundle'")
+    if _id_exists(skill_id):
+        raise FileExistsError(f"Skill {skill_id!r} already exists")
+
+    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    display_name = name or skill_id
+    desc = description or ""
+
+    if skill_type == "yaml":
+        data = {
+            "name": display_name,
+            "description": desc,
+            "agent": {
+                "prompt": _LiteralStr(body or f"TODO: write the prompt for {skill_id}\n"),
+            },
+        }
+        content = yaml.safe_dump(data, sort_keys=False, allow_unicode=True,
+                                 default_flow_style=False, width=120)
+        path = SKILLS_DIR / f"{skill_id}.skill.yaml"
+        path.write_text(content, encoding="utf-8")
+    else:
+        bundle_dir = SKILLS_DIR / skill_id
+        bundle_dir.mkdir(parents=True)
+        fm_data = {"name": display_name, "description": desc}
+        fm = yaml.safe_dump(fm_data, sort_keys=False, allow_unicode=True,
+                            default_flow_style=False, width=120)
+        body_text = body if body else f"# {display_name}\n\nTODO: write the skill content.\n"
+        if not body_text.endswith("\n"):
+            body_text += "\n"
+        content = f"---\n{fm}---\n\n{body_text}"
+        (bundle_dir / "SKILL.md").write_text(content, encoding="utf-8")
+
+    return read_skill(skill_id)
+
+
+def write_skill_doc(skill_id: str, doc: str, content: str) -> dict:
+    if READ_ONLY:
+        raise PermissionError("Service is in read-only mode")
+    path = _resolve_bundle_doc(skill_id, doc)
+    if path.exists():
+        bak = path.parent / (path.name + ".bak")
+        shutil.copy2(path, bak)
+    path.write_text(content, encoding="utf-8")
+    return read_skill_doc(skill_id, doc)
